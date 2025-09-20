@@ -1,8 +1,31 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; chess-chat.el --- Very much like kibitzing, but not saved.  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This is free software; you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
 ;;
-;; Implements chess chat, which is very much like kibitzing, but not
-;; saved.  RET is used to send each chat line.
+;; This is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+;; for more details.
 ;;
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; RET is used to send each chat line.
+
+;;; Code:
+
+(require 'chess-module)
 
 (defvar chess-chat-input-last nil)
 
@@ -24,7 +47,7 @@
   (set-marker chess-chat-input-last (point-max))
   (set-buffer-modified-p nil))
 
-(defun chess-chat-handler (game event &rest args)
+(defun chess-chat-handler (_game event &rest args)
   (cond
    ((eq event 'initialize)
     (kill-buffer (current-buffer))

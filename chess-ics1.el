@@ -1,7 +1,24 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; ICS1 style display
-;;
+;;; chess-ics1.el --- Classic ICS1 style chessboard display  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Code:
 
 (require 'chess-display)
 
@@ -13,31 +30,26 @@
   '((((class color) (background light)) (:foreground "Green"))
     (((class color) (background dark)) (:foreground "Green"))
     (t (:bold t)))
-  "*The face used for black pieces on the ASCII display."
-  :group 'chess-ics1)
+  "The face used for black pieces on the ASCII display.")
 
 (defface chess-ics1-white-face
   '((((class color) (background light)) (:foreground "Yellow"))
     (((class color) (background dark)) (:foreground "Yellow"))
     (t (:bold t)))
-  "*The face used for white pieces on the ASCII display."
-  :group 'chess-ics1)
+  "The face used for white pieces on the ASCII display.")
 
 (defface chess-ics1-highlight-face
   '((((class color) (background light)) (:background "#add8e6"))
     (((class color) (background dark)) (:background "#add8e6")))
-  "Face to use for highlighting pieces that have been selected."
-  :group 'chess-ics1)
+  "Face to use for highlighting pieces that have been selected.")
 
-(defcustom chess-ics1-popup-function 'chess-ics1-popup
+(defcustom chess-ics1-popup-function #'chess-ics1-popup
   "The function used to popup a chess-ics1 display."
-  :type 'function
-  :group 'chess-ics1)
+  :type 'function)
 
 (defcustom chess-ics1-separate-frame nil
   "If non-nil, display the chessboard in its own frame."
-  :type 'boolean
-  :group 'chess-ics1)
+  :type 'boolean)
 
 ;;; Code:
 
@@ -49,13 +61,13 @@
     (funcall chess-ics1-popup-function))
 
    ((eq event 'draw)
-    (apply 'chess-ics1-draw args))
+    (apply #'chess-ics1-draw args))
 
    ((eq event 'draw-square)
-    (apply 'chess-ics1-draw-square args))
+    (apply #'chess-ics1-draw-square args))
 
    ((eq event 'highlight)
-    (apply 'chess-ics1-highlight args))))
+    (apply #'chess-ics1-highlight args))))
 
 (defun chess-ics1-popup ()
   (if chess-ics1-separate-frame
@@ -86,7 +98,7 @@ PERSPECTIVE is t for white or nil for black."
     (erase-buffer)
     (let* ((inverted (not perspective))
 	   (rank (if inverted 7 0))
-	   (file (if inverted 7 0)) beg)
+	   (file (if inverted 7 0)))
       (insert "\n      +---+---+---+---+---+---+---+---+\n")
       (while (if inverted (>= rank 0) (< rank 8))
 	(if (/= rank (if inverted 7 0))
@@ -129,7 +141,7 @@ PERSPECTIVE is t for white or nil for black."
 (defun chess-debug-position (&optional position)
   "This is a debugging function, and not meant from general use."
   (interactive)
-  (let ((pos (or position (chess-engine-position nil))))
+  (let ((pos (or position (chess-display-position nil))))
     (with-current-buffer (get-buffer-create "*scratch*")
       (chess-ics1-draw pos t)
       (funcall chess-ics1-popup-function))))

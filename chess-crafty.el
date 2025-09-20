@@ -1,20 +1,40 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Play against crafty!
-;;
+;;; chess-crafty.el --- Play against crafty!  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games, processes
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Code:
 
 (require 'chess-common)
+(require 'chess-fen)
+(require 'chess-pgn)
 (require 'chess-var)
 
 (defgroup chess-crafty nil
   "The publically available chess engine 'crafty'."
-  :group 'chess-engine)
+  :group 'chess-engine
+  :link '(custom-manual "(chess)Crafty"))
 
 (defcustom chess-crafty-path (or (executable-find "crafty")
 				 (executable-find "wcrafty"))
-  "*The path to the crafty executable."
-  :type 'file
-  :group 'chess-crafty)
+  "The path to the crafty executable."
+  :type 'file)
 
 (defvar chess-crafty-evaluation nil)
 
@@ -57,7 +77,6 @@
 	      ;; We can translate this information to EPD opcodes
 	      (let ((depth (read (match-string 1)))
 		    (centipawn (read (match-string 2)))
-		    (nodes (match-string 4))
 		    (pos (chess-engine-position nil)))
 		(chess-pos-set-epd pos 'acd depth)
 		(chess-pos-set-epd pos 'ce centipawn)
@@ -113,7 +132,7 @@
 
      ((eq event 'setup-pos)
       (chess-engine-send nil (format "setboard %s\n"
-				     (chess-pos-to-string (car args)))))
+				     (chess-pos-to-fen (car args)))))
 
      ((eq event 'evaluate)
       (setq chess-crafty-evaluation nil)
@@ -121,7 +140,7 @@
       (let ((limit 50))
 	(while (and (null chess-crafty-evaluation)
 		    (> (setq limit (1- limit)) 0))
-	  (sit-for 0 100 t))
+	  (sit-for 0.1 t))
 	chess-crafty-evaluation))
 
      ((eq event 'analyze)
@@ -131,7 +150,7 @@
 
      ((eq event 'setup-game)
       (let ((file (chess-with-temp-file
-		      (insert (chess-game-to-string (car args)) ?\n))))
+		      (chess-insert-pgn (car args)) (insert ?\n))))
 	(chess-engine-send nil (format "read %s\n" file))))
 
      ((eq event 'set-option)
@@ -145,10 +164,10 @@
 	    (chess-engine-send nil "hard\n")
 	  (chess-engine-send nil "easy\n")))
        ((eq (car args) 'search-depth)
-	(assert (and (integerp (cadr args)) (>= (cadr args) 0)))
+	(cl-assert (and (integerp (cadr args)) (>= (cadr args) 0)))
 	(chess-engine-send nil (format "sd %d\n" (cadr args))))
        ((eq (car args) 'search-time)
-	(assert (and (integerp (cadr args)) (> (cadr args) 0)))
+	(cl-assert (and (integerp (cadr args)) (> (cadr args) 0)))
 	(chess-engine-send nil (format "st %d\n" (cadr args))))))
 
      (t
@@ -156,7 +175,7 @@
 	       (= 1 (mod (car args) 2)))
 	  (error "Cannot undo until after crafty moves"))
 
-      (apply 'chess-common-handler game event args)))))
+      (apply #'chess-common-handler game event args)))))
 
 (provide 'chess-crafty)
 

@@ -1,29 +1,56 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Code shared by all chess displays
-;;
+;;; chess-display.el --- Code shared by all chess displays  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; This file contains common code for all chessboard displays.
+
+;;; Code:
+
+(require 'chess-fen)
+(require 'chess-input)
 (require 'chess-message)
 (require 'chess-module)
+(require 'chess-random)
 (require 'chess-var)
-(require 'chess-input)
 
 (defgroup chess-display nil
-  "Common code used by chess displays."
-  :group 'chess)
+  "Options common to all chessboard displays."
+  :group 'chess
+  :link '(custom-manual "(chess)Chessboard displays"))
 
 (defcustom chess-display-popup t
   "If non-nil (the default), popup displays whenever a significant event
 occurs."
-  :type 'boolean
-  :group 'chess-display)
+  :type 'boolean)
 
 (make-variable-buffer-local 'chess-display-popup)
 
-(defcustom chess-display-highlight-legal nil
+(defcustom chess-display-highlight-legal t
   "If non-nil, highlight legal target squares when a piece is selected."
-  :type 'boolean
-  :group 'chess-display)
+  :type 'boolean)
+
+(defcustom chess-display-highlight-last-move nil
+  "If non-nil, highlight the last move made on the game."
+  :type 'boolean)
 
 (chess-message-catalog 'english
   '((mode-white     . "White")
@@ -49,18 +76,15 @@ occurs."
 		  (concat " " (match-string 1 date))))) ")")
   "The format of a chess display's modeline.
 See `mode-line-format' for syntax details."
-  :type 'sexp
-  :group 'chess-display)
+  :type 'sexp)
 
 (defface chess-display-black-face
   '((t (:background "Black" :foreground "White")))
-  "*The face used for the word Black in the mode-line."
-  :group 'chess-display)
+  "The face used for the word Black in the mode-line.")
 
 (defface chess-display-white-face
   '((t (:background "White" :foreground "Black")))
-  "*The face used for the word White in the mode-line."
-  :group 'chess-display)
+  "The face used for the word White in the mode-line.")
 
 ;;; Code:
 
@@ -80,6 +104,7 @@ See `mode-line-format' for syntax details."
 (make-variable-buffer-local 'chess-display-index)
 (make-variable-buffer-local 'chess-display-move-text)
 (make-variable-buffer-local 'chess-display-side-to-move)
+(put 'chess-display-side-to-move 'risky-local-variable t)
 (make-variable-buffer-local 'chess-display-perspective)
 (make-variable-buffer-local 'chess-display-event-handler)
 (make-variable-buffer-local 'chess-display-edit-mode)
@@ -114,7 +139,7 @@ of the board, if non-nil, the board is viewed from White's perspective."
       (let* ((chess-display-style style)
 	     (display (chess-module-create 'chess-display game "*Chessboard*"
 			     perspective)))
-	(if (interactive-p)
+	(if (called-interactively-p 'any)
 	    (progn
 	      (chess-display-update display)
 	      (chess-display-popup display))
@@ -158,6 +183,9 @@ of the board, if non-nil, the board is viewed from White's perspective."
 				     chess-starting-position)
       (chess-game-set-data chess-module-game 'my-color t))
     (chess-display-set-index nil 0)))
+
+(defvar chess-display-edit-position nil)
+(make-variable-buffer-local 'chess-display-edit-position)
 
 (defun chess-display-position (display)
   "Return the position currently viewed on DISPLAY."
@@ -317,8 +345,29 @@ also view the same game."
 		  (point-min))))))
     (aref chess-display-index-positions index)))
 
-(defun chess-display-paint-move (display ply)
+(defun chess-display-draw-square (display index &optional piece pos)
+  "(Re)draw the square of DISPLAY indicated by INDEX.
+Optional argument PIECE indicates the piece (or blank) to draw.
+If it is not provided, `chess-display-position' is consulted.
+Optional argument POS indicates the buffer position to draw the square at.
+If that is not provided, `chess-display-index-pos' is called.
+
+This function is especially useful to clear a previously set highlight."
+  (cl-check-type display (or null buffer))
+  (cl-check-type index (integer 0 63))
+  (cl-check-type piece (member nil ?  ?P ?N ?B ?R ?Q ?K ?p ?n ?b ?r ?q ?k))
   (chess-with-current-buffer display
+    (cl-check-type pos (or null (number ((point-min)) ((point-max)))))
+    (funcall chess-display-event-handler 'draw-square
+	     (or pos (chess-display-index-pos nil index))
+	     (or piece (chess-pos-piece (chess-display-position nil) index))
+	     index)))
+
+(defun chess-display-paint-move (display ply)
+  (cl-check-type display (or null buffer))
+  (chess-with-current-buffer display
+    (if chess-display-highlight-last-move
+	(chess-display-redraw))
     (let ((position (chess-ply-pos ply))
 	  (ch (chess-ply-changes ply)))
       (while ch
@@ -326,51 +375,59 @@ also view the same game."
 	    (setq ch nil)
 	  (let ((from (car ch))
 		(to (cadr ch)))
-	    (funcall chess-display-event-handler 'draw-square
-		     (chess-display-index-pos nil from) ?  from)
-	    (let ((new-piece (chess-ply-keyword ply :promote)))
-	      (if new-piece
-		  (funcall chess-display-event-handler 'draw-square
-			   (chess-display-index-pos nil to)
-			   (if (chess-pos-side-to-move position)
-			       new-piece
-			     (downcase new-piece)) to)
-		(funcall chess-display-event-handler 'draw-square
-			 (chess-display-index-pos nil to)
-			 (chess-pos-piece position from) to)))
+	    (chess-display-draw-square nil from ? )
+	    (chess-display-draw-square
+	     nil to (or (let ((new-piece (chess-ply-keyword ply :promote)))
+			  (when new-piece
+			    (if (chess-pos-side-to-move position)
+				new-piece (downcase new-piece))))
+			(chess-pos-piece position from)))
 	    (when (chess-ply-keyword ply :en-passant)
-	      (funcall chess-display-event-handler 'draw-square
-		       (chess-display-index-pos nil (chess-pos-en-passant position))
-		       ?  (chess-pos-en-passant position))))
-	  (setq ch (cddr ch)))))))
+	      (chess-display-draw-square nil (chess-pos-en-passant position) ? )))
+	  (setq ch (cddr ch)))))
+    (if chess-display-highlight-last-move
+	(chess-display-highlight-move display ply))))
 
 (chess-message-catalog 'english
   '((not-your-move . "It is not your turn to move")
     (game-is-over  . "This game is over")))
 
-(defun chess-display-move (display ply &optional prev-pos pos)
+(defsubst chess-display-active-p ()
+  "Return non-nil if the displayed chessboard reflects an active game.
+Basically, it means we are playing, not editing or reviewing."
+  (and (chess-game-data chess-module-game 'active)
+       (= chess-display-index (chess-game-index chess-module-game))
+       (not (chess-game-over-p chess-module-game))
+       (not chess-display-edit-mode)))
+
+(defun chess-display-move (display ply)
   "Move a piece on DISPLAY, by applying the given PLY.
 The position of PLY must match the currently displayed position.
-If only START is given, it must be in algebraic move notation."
+
+This adds PLY to the game associated with DISPLAY."
   (chess-with-current-buffer display
-    (if (and (chess-display-active-p)
-	     ;; `active' means we're playing against an engine
-	     (chess-game-data chess-module-game 'active)
-	     (not (eq (chess-game-data chess-module-game 'my-color)
-		      (chess-game-side-to-move chess-module-game))))
-	(chess-error 'not-your-move)
-      (if (and (= chess-display-index
-		  (chess-game-index chess-module-game))
-	       (chess-game-over-p chess-module-game))
-	  (chess-error 'game-is-over)))
-    (if (= chess-display-index (chess-game-index chess-module-game))
-	(let ((chess-display-handling-event t))
-	  (chess-display-paint-move nil ply)
-	  (chess-game-move chess-module-game ply)
-	  (chess-display-set-index* nil (chess-game-index chess-module-game)))
-      ;; jww (2002-03-28): This should beget a variation within the
-      ;; game, or alter the game, just as SCID allows
-      (chess-error 'cannot-yet-add))))
+    (cond ((and (chess-display-active-p)
+		;; `active' means we're playing against an engine
+		(chess-game-data chess-module-game 'active)
+		(not (eq (chess-game-data chess-module-game 'my-color)
+			 (chess-game-side-to-move chess-module-game))))
+	   (chess-error 'not-your-move))
+
+	  ((and (= chess-display-index (chess-game-index chess-module-game))
+		(chess-game-over-p chess-module-game))
+	   (chess-error 'game-is-over))
+
+	  ((= chess-display-index (chess-game-index chess-module-game))
+	   (let ((chess-display-handling-event t))
+	     (chess-game-move chess-module-game ply)
+	     (chess-display-paint-move nil ply)
+	     (chess-display-set-index* nil (chess-game-index chess-module-game))
+	     (redisplay)                   ; FIXME: This is clearly necessary, but why?
+	     (chess-game-run-hooks chess-module-game 'post-move)))
+
+	  (t ;; jww (2002-03-28): This should beget a variation within the
+	     ;; game, or alter the game, just as SCID allows
+	     (chess-error 'cannot-yet-add)))))
 
 (defun chess-display-highlight (display &rest args)
   "Highlight the square at INDEX on the current position.
@@ -384,13 +441,18 @@ that is supported by most displays, and is the default mode."
 	    (setq mode arg)
 	  (funcall chess-display-event-handler 'highlight arg mode))))))
 
-(defun chess-display-highlight-legal (display pos)
-  "Highlight all legal move targets from POS."
+(defun chess-display-highlight-legal (display index)
+  "Highlight all legal move targets from INDEX."
   (chess-with-current-buffer display
-    (dolist (ply (chess-legal-plies (chess-display-position nil)
-				    :index pos))
+    (dolist (ply (chess-legal-plies (chess-display-position nil) :index index))
       (chess-display-highlight nil "pale green"
 			       (chess-ply-target ply)))))
+
+(defun chess-display-highlight-move (display ply)
+  "Highlight the last move made in the current game."
+  (chess-display-highlight display "medium sea green"
+			   (chess-ply-source ply)
+			   (chess-ply-target ply)))
 
 (defun chess-display-highlight-passed-pawns (&optional display)
   (interactive)
@@ -457,16 +519,14 @@ that is supported by most displays, and is the default mode."
 (defcustom chess-display-interesting-events
   '(set-index)
   "Events which will cause a display refresh."
-  :type '(repeat symbol)
-  :group 'chess-display)
+  :type '(repeat symbol))
 
 (defcustom chess-display-momentous-events
   '(orient post-undo setup-game pass move resign abort)
   "Events that will refresh, and cause 'main' displays to popup.
 These are displays for which `chess-display-set-main' has been
 called."
-  :type '(repeat symbol)
-  :group 'chess-display)
+  :type '(repeat symbol))
 
 (defun chess-display-handler (game event &rest args)
   "This display module presents a standard chessboard.
@@ -582,9 +642,10 @@ See `chess-display-type' for the different kinds of displays."
 		   ?1 ?2 ?3 ?4 ?5 ?6 ?7 ?8
 		   ?r ?n ?b ?q ?k
 		   ?R ?N ?B ?Q ?K
-		   ?o ?O ?x))
+		   ?o ?O ?x ?=))
       (define-key map (vector key) 'chess-input-shortcut))
     (define-key map [backspace] 'chess-input-shortcut-delete)
+    (define-key map "\d" 'chess-input-shortcut-delete)
 
     (define-key map [(control ?m)] 'chess-display-select-piece)
     (define-key map [return] 'chess-display-select-piece)
@@ -637,21 +698,12 @@ The key bindings available in this mode are:
 	(function
 	 (lambda ()
 	   (chess-display-position nil))))
-  (setq chess-input-move-function 'chess-display-move))
+  (setq chess-input-move-function #'chess-display-move))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;; Commands used by the keyboard bindings above
 ;;
-
-(defsubst chess-display-active-p ()
-  "Return non-nil if the displayed chessboard reflects an active game.
-Basically, it means we are playing, not editing or reviewing."
-  (and (chess-game-data chess-module-game 'active)
-       (= chess-display-index
-	  (chess-game-index chess-module-game))
-       (not (chess-game-over-p chess-module-game))
-       (not chess-display-edit-mode)))
 
 (defun chess-display-invert ()
   "Invert the perspective of the current chess board."
@@ -663,40 +715,44 @@ Basically, it means we are playing, not editing or reviewing."
   (interactive "sSet from FEN string: ")
   (chess-display-set-position nil (chess-fen-to-pos fen)))
 
+(declare-function chess-game-to-pgn "chess-pgn" (game &optional indented to-string))
+
 (defun chess-display-kill-board (&optional arg)
   "Send the current board configuration to the user."
   (interactive "P")
-  (let ((x-select-enable-clipboard t)
+  (let (;; (x-select-enable-clipboard t)  ;; It's already the default!
 	(game chess-module-game))
-    (if arg
-	(kill-new (with-temp-buffer
-		    (chess-game-to-pgn game)
-		    (buffer-string)))
-      (kill-new (chess-pos-to-fen (chess-display-position nil))))))
+    (kill-new
+     (if arg
+	 (with-temp-buffer
+	   (chess-game-to-pgn game)
+	   (buffer-string))
+       (chess-pos-to-fen (chess-display-position nil) t)))))
+
+(declare-function chess-pgn-to-game "chess-pgn" (&optional string))
 
 (defun chess-display-yank-board ()
   "Send the current board configuration to the user."
   (interactive)
-  (let ((x-select-enable-clipboard t)
+  (let (;; (x-select-enable-clipboard t)  ;; It's already the default!
 	(display (current-buffer))
 	(text (current-kill 0)))
     (with-temp-buffer
       (insert text)
       (goto-char (point-max))
       (while (and (bolp) (not (bobp)))
-	(delete-backward-char 1))
+	(delete-char -1))
       (goto-char (point-min))
       (cond
        ((search-forward "[Event " nil t)
 	(goto-char (match-beginning 0))
-	(chess-game-copy-game chess-module-game (chess-pgn-to-game)))
-       ((looking-at (concat chess-algebraic-regexp "$"))
-	(let ((move (buffer-string)))
-	  (with-current-buffer display
-	    (chess-display-manual-move move))))
+	(chess-game-copy-game display (chess-pgn-to-game)))
        (t
-	(with-current-buffer display
-	  (chess-display-set-from-fen (buffer-string))))))))
+        (let ((f (if (looking-at (concat chess-algebraic-regexp "$"))
+                     #'chess-display-manual-move #'chess-display-set-from-fen))
+              (str (buffer-string)))
+	  (with-current-buffer display
+	    (funcall f str))))))))
 
 (defvar chess-display-search-map
   (let ((map (copy-keymap minibuffer-local-map)))
@@ -767,7 +823,7 @@ Basically, it means we are playing, not editing or reviewing."
 (defun chess-display-search-backward (&optional direction)
   (interactive)
   (setq chess-display-previous-index chess-display-index)
-  (condition-case err
+  (condition-case nil
       (let ((chess-display-search-direction direction)
 	    (chess-current-display (current-buffer)))
 	(read-from-minibuffer "Find algebraic move: " nil
@@ -810,6 +866,8 @@ Basically, it means we are playing, not editing or reviewing."
     (unless ply
       (chess-error 'illegal-notation move))
     (chess-display-move nil ply)))
+
+(defvar chess-images-separate-frame)
 
 (defun chess-display-remote (display)
   (interactive "sDisplay this game on X server: ")
@@ -929,23 +987,22 @@ Basically, it means we are playing, not editing or reviewing."
 (defun chess-display-list-buffers ()
   "List all buffers related to this display's current game."
   (interactive)
-  (let ((buffer-list-func (symbol-function 'buffer-list)))
-    (unwind-protect
-	(let ((chess-game chess-module-game)
-	      (lb-command (lookup-key ctl-x-map [(control ?b)]))
-	      (ibuffer-maybe-show-regexps nil))
-	  (fset 'buffer-list
-		(function
-		 (lambda ()
-		   (delq nil
-			 (mapcar (function
-				  (lambda (cell)
-				    (and (bufferp (cdr cell))
-					 (buffer-live-p (cdr cell))
-					 (cdr cell))))
-				 (chess-game-hooks chess-game))))))
-	  (call-interactively lb-command))
-      (fset 'buffer-list buffer-list-func))))
+  (let ((chess-game chess-module-game)
+        (lb-command (lookup-key ctl-x-map [(control ?b)])))
+    ;; FIXME: Running "whatever code is bound to `C-x b'" (which could really
+    ;; be anything, if the user is using a completely different key layout, as
+    ;; in Evil, ErgoEmacs, or whatnot) while rebinding buffer-list is
+    ;; pretty risky!
+    (cl-letf (((symbol-function 'buffer-list)
+               (lambda (&optional _frame)
+                 (delq nil
+                       (mapcar (function
+                                (lambda (cell)
+                                  (and (bufferp (cdr cell))
+                                       (buffer-live-p (cdr cell))
+                                       (cdr cell))))
+                               (chess-game-hooks chess-game))))))
+      (call-interactively lb-command))))
 
 (chess-message-catalog 'english
   '((return-to-current . "Use '>' to return to the current position")))
@@ -984,17 +1041,13 @@ to the end or beginning."
 ;; chess-display-edit-mode (for editing the position directly)
 ;;
 
-(defvar chess-display-edit-position nil)
-
-(make-variable-buffer-local 'chess-display-edit-position)
-
 (defvar chess-display-edit-mode-map
   (let ((map (make-keymap)))
     (suppress-keymap map)
 
     (define-key map [(control ?l)] 'chess-display-redraw)
     (define-key map [(control ?i)] 'chess-display-invert)
-    (define-key map [tab] 'chess-display-invert)
+    (define-key map "\t" 'chess-display-invert)
 
     (define-key map [??] 'describe-mode)
     (define-key map [?L] 'chess-display-list-buffers)
@@ -1058,7 +1111,7 @@ to the end or beginning."
 				 chess-display-edit-position))
 
 (defun chess-display-restore-board ()
-  "Setup the current board for editing."
+  "Cancel editing."
   (interactive)
   (chess-display-end-edit-mode)
   ;; reset the modeline
@@ -1078,17 +1131,17 @@ to the end or beginning."
 (defun chess-display-set-piece (&optional piece)
   "Set the piece under point to command character, or space for clear."
   (interactive)
-  (if (or (null piece) (char-valid-p piece))
-      (let ((index (get-text-property (point) 'chess-coord)))
-	(chess-pos-set-piece chess-display-edit-position index
-			     (or piece last-command-char))
-	(funcall chess-display-event-handler 'draw-square
-		 (point) (or piece last-command-char) index))))
+  (when (or (null piece) (characterp piece))
+    (let ((index (get-text-property (point) 'chess-coord)))
+      (chess-pos-set-piece chess-display-edit-position index
+			   (or piece last-command-event))
+      (chess-display-draw-square nil index
+				 (or piece last-command-event) (point)))))
 
 (defun chess-display-mouse-set-piece (event)
   "Select the piece the user clicked on."
   (interactive "e")
-  (if (fboundp 'event-window)		; XEmacs
+  (if (featurep 'xemacs)
       (progn
 	(set-buffer (window-buffer (event-window event)))
 	(and (event-point event) (goto-char (event-point event))))
@@ -1141,8 +1194,7 @@ Clicking once on a piece selects it; then click on the target location."
 	      (if chess-display-last-selected
 		  (let ((last-sel chess-display-last-selected))
 		    ;; if they select the same square again, just deselect
-		    ;; it by redrawing the display and removing all
-		    ;; highlights
+		    ;; it by redrawing the square to remove highlights.
 		    (if (= (point) (car last-sel))
 			(funcall chess-display-event-handler 'draw-square
 				 (car last-sel)
@@ -1166,14 +1218,21 @@ Clicking once on a piece selects it; then click on the target location."
 							      coord))
 			    (throw 'message (chess-string 'move-not-legal)))
 			  (condition-case err
-			      (chess-display-move nil ply
-						  (car last-sel) (point))
+			      (chess-display-move nil ply)
 			    (error
 			     (throw 'message (error-message-string err)))))))
+		    ;; Redraw legal targets to clear highlight.
+		    (when chess-display-highlight-legal
+		      (dolist (index (mapcar #'chess-ply-target
+					     (chess-legal-plies
+					      position
+					      :index (cdr last-sel))))
+			(unless (= index coord)
+			  (chess-display-draw-square nil index))))
 		    (setq chess-display-last-selected nil))
 		(let ((piece (chess-pos-piece position coord)))
 		  (cond
-		   ((eq piece ? )
+		   ((= piece ? )
 		    (throw 'message (chess-string 'selected-empty)))
 		   ((not (or chess-display-edit-mode
 			     (not (chess-display-active-p))
@@ -1208,15 +1267,12 @@ Clicking once on a piece selects it; then click on the target location."
 (defun chess-display-mouse-select-piece (event)
   "Select the piece the user clicked on."
   (interactive "e")
-  (if (fboundp 'event-window)		; XEmacs
+  (if (featurep 'xemacs)
       (progn
 	(set-buffer (window-buffer (event-window event)))
 	(and (event-point event) (goto-char (event-point event))))
-    (if (equal (event-start event) (event-end event))
-	(progn
-	  (set-buffer (window-buffer (posn-window (event-start event))))
-	  (goto-char (posn-point (event-start event))))
-      (goto-char (posn-point (event-end event)))))
+    (set-buffer (window-buffer (posn-window (event-end event))))
+    (goto-char (posn-point (event-end event))))
   (chess-display-select-piece))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

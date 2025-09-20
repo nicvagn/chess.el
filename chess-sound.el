@@ -1,8 +1,30 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
+;;; chess-sound.el --- Announce chess moves with pre-recorded sound files  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
 ;; This is very similar to chess-announce, except it uses specific
 ;; .WAV files instead of text-to-speech.
-;;
+
+;;; Code:
 
 (require 'chess-game)
 
@@ -15,48 +37,44 @@
 		    (file-name-directory
 		     (or load-file-name buffer-file-name)))
   "The directory where chess sounds can be found."
-  :type 'directory
-  :group 'chess-sound)
+  :type 'directory)
 
 (defcustom chess-sound-play-function (if (fboundp 'play-sound-file)
-					 'play-sound-file
-				       'chess-sound-play)
+					 #'play-sound-file
+				       #'chess-sound-play)
   "Non-nil if chess-sound should play sounds ."
-  :type 'function
-  :group 'chess-sound)
+  :type 'function)
 
 (defcustom chess-sound-program (or (executable-find "esdplay")
 				   (executable-find "play"))
   "Program used to play sounds, if `play-sound-file' does not exist."
-  :type 'file
-  :group 'chess-sound)
+  :type 'file)
 
 (defcustom chess-sound-args nil
   "Additional args to pass to `chess-sound-program', before the .WAV file."
-  :type '(repeat string)
-  :group 'chess-sound)
+  :type '(repeat string))
 
 (defcustom chess-sound-my-moves nil
   "If non-nil, plays the move.wav sound whenever you make a move."
-  :type 'boolean
-  :group 'chess-sound)
+  :type 'boolean)
 
 (defsubst chess-sound (file)
-  (funcall chess-sound-play-function
-	   (expand-file-name (concat file ".wav")
-			     chess-sound-directory)))
+  (ignore-errors
+    (funcall chess-sound-play-function
+	     (expand-file-name (concat file ".wav")
+			       chess-sound-directory))))
 
 (defsubst chess-sound-play (file)
-  (apply 'call-process chess-sound-program
+  (apply #'call-process chess-sound-program
 	 nil nil nil (append chess-sound-args (list file))))
 
-(defun chess-sound-handler (game event &rest args)
+(defun chess-sound-handler (game event &rest _args)
   (cond
    ((eq event 'initialize)
     (and (file-directory-p chess-sound-directory)
 	 (file-readable-p (expand-file-name "move.wav"
 					    chess-sound-directory))
-	 (or (eq chess-sound-play-function 'play-sound-file)
+	 (or (eq chess-sound-play-function #'play-sound-file)
 	     (and chess-sound-program
 		  (file-executable-p chess-sound-program)))))
 
@@ -71,8 +89,7 @@
 	       (target (chess-ply-target ply))
 	       (s-piece (and source (chess-pos-piece pos source)))
 	       (t-piece (and target (chess-pos-piece pos target)))
-	       (which (chess-ply-keyword ply :which))
-	       text)
+	       (which (chess-ply-keyword ply :which)))
 	  (cond
 	   ((chess-ply-keyword ply :castle)
 	    (chess-sound "O-O"))

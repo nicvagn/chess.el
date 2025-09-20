@@ -1,11 +1,31 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; chess-ucb.el --- Engine interface to the Novag Universal Chess Board  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This is free software; you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
 ;;
-;; Engine interface to the Novag Universal Chess Board
+;; This is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+;; for more details.
 ;;
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
 ;; jww (2002-04-25): This code has not been tested yet, since I don't
 ;; have access to a UCB.  If anybody wants to donate one, or the money
 ;; for one ($300), I would be happy to correct this module.  :)
-;;
+
+;;; Code:
 
 (require 'chess-common)
 
@@ -15,8 +35,7 @@
 
 (defcustom chess-ucb-device "/dev/ttyS0"
   "The serial device used to talk to the Novag UCB."
-  :type 'file
-  :group 'chess-ucb)
+  :type 'file)
 
 (defvar chess-ucb-handling-event nil)
 
@@ -64,7 +83,7 @@
 	nil))
 
      ((eq event 'undo)
-      (dotimes (i (car args))
+      (dotimes (_ (car args))
 	(chess-engine-send nil "T\r\n"))
       ;; prevent us from handling the `undo' event which this triggers
       (let ((chess-engine-handling-event t))

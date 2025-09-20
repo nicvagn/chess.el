@@ -1,11 +1,68 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; chess-pgn.el --- Convert a chess game to/from Portable Game Notation (PGN)  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: files, games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; Portable Game Notation (PGN) is a plain text computer-processible format for
+;; recording chess games (both the moves and related data).
 ;;
-;; Convert a chess game to/from PGN notation
+;; Here is a sample game in PGN format:
 ;;
+;; [Event "F/S Return Match"]
+;; [Site "Belgrade, Serbia Yugoslavia|JUG"]
+;; [Date "1992.11.04"]
+;; [Round "29"]
+;; [White "Fischer, Robert J."]
+;; [Black "Spassky, Boris V."]
+;; [Result "1/2-1/2"]
+;;
+;; 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 {This opening is called the Ruy Lopez.}
+;; 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8  10. d4 Nbd7
+;; 11. c4 c6 12. cxb5 axb5 13. Nc3 Bb7 14. Bg5 b4 15. Nb1 h6 16. Bh4 c5 17. dxe5
+;; Nxe4 18. Bxe7 Qxe7 19. exd6 Qf6 20. Nbd2 Nxd6 21. Nc4 Nxc4 22. Bxc4 Nb6
+;; 23. Ne5 Rae8 24. Bxf7+ Rxf7 25. Nxf7 Rxe1+ 26. Qxe1 Kxf7 27. Qe3 Qg5 28. Qxg5
+;; hxg5 29. b3 Ke6 30. a3 Kd6 31. axb4 cxb4 32. Ra5 Nd5 33. f3 Bc8 34. Kf2 Bf5
+;; 35. Ra7 g6 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5 40. Rd6 Kc5 41. Ra6
+;; Nf2 42. g4 Bd3 43. Re6 1/2-1/2
+;;
+;; This module provides functions for converting to/from PGN format:
+;;
+;;    chess-game-to-pgn
+;;    chess-pgn-to-game
+;;
+;; and a mode for viewing/editing PGN files:
+;;
+;;    chess-pgn-mode
+
+;;; Code:
 
 (require 'chess-algebraic)
+(require 'chess-display)
 (require 'chess-fen)
+(require 'chess-game)
+(require 'chess-ply)
 (require 'chess-message)
+(require 'mm-decode)
+(require 'mm-view)
+(require 'pcomplete)
 
 (defvar chess-pgn-fill-column 60)
 
@@ -14,21 +71,28 @@
     (pgn-parse-error . "Error parsing PGN syntax")))
 
 (defun chess-pgn-read-plies (game position &optional top-level)
-  (let ((plies (list t)) prevpos)
+  (let ((plies (list t)) (begin (point)) move-beg prevpos)
     (catch 'done
       (while (not (eobp))
 	(cond
 	 ((looking-at "[1-9][0-9]*\\.[. ]*")
 	  (goto-char (match-end 0)))
 
-	 ((looking-at chess-algebraic-regexp)
+	 ((looking-at chess-algebraic-regexp-ws)
+	  (setq move-beg (point))
 	  (goto-char (match-end 0))
+	  (skip-syntax-backward " ")
 	  (setq prevpos position)
-	  (let* ((move (match-string-no-properties 0))
-		 (ply (chess-algebraic-to-ply position move)))
+	  (let* ((move (buffer-substring-no-properties move-beg (point)))
+		 (ply (condition-case err
+			  (chess-algebraic-to-ply position move)
+			(error
+			 (message "PGN: %s" (buffer-substring begin (point-max)))
+			 (error (error-message-string err))))))
 	    (unless ply
 	      (chess-error 'pgn-read-error move))
 	    (setq position (chess-ply-next-pos ply))
+	    (chess-pos-set-annotations position nil)
 	    (nconc plies (list ply))))
 
 	 ((and top-level
@@ -52,7 +116,7 @@
 	    (search-forward "}")
 	    (forward-char)
 	    (chess-pos-add-annotation position (buffer-substring-no-properties
-					       begin (- (point) 2)))))
+						begin (- (point) 2)))))
 	 ((looking-at "(")
 	  (forward-char)
 	  (skip-chars-forward " \t\n")
@@ -65,6 +129,9 @@
 	  (throw 'done t))
 
 	 (t
+	  (if (eq t (car (last plies)))
+	      (error "PGN parser: Expected a ply here: '%s'"
+		     (buffer-substring (point) (point-max))))
 	  (nconc plies (list (chess-ply-create*
 			      (chess-ply-next-pos (car (last plies))))))
 	  (throw 'done t)))
@@ -82,32 +149,39 @@ Optionally use the supplied STRING instead of the current buffer."
     (chess-pgn-parse)))
 
 (defun chess-pgn-parse ()
-  (when (or (looking-at "\\[")
-	    (and (search-forward "[" nil t)
-		 (goto-char (match-beginning 0))))
-    (let ((game (chess-game-create)))
-      (chess-game-set-tags game nil)
-      (while (looking-at "\\[\\(\\S-+\\)\\s-+\\(\".+?\"\\)\\][ \t\n\r]+")
-	(chess-game-set-tag game (match-string-no-properties 1)
-			    (read (match-string-no-properties 2)))
-	(goto-char (match-end 0)))
-      (let ((fen (chess-game-tag game "FEN")) plies)
-	(if fen
-	    (chess-game-set-start-position game (chess-fen-to-pos fen)))
-	(setq plies (chess-pgn-read-plies game (chess-game-pos game) t))
-	(if plies
-	    (chess-game-set-plies game plies)))
-      game)))
+  (if (or (looking-at "\\[")
+	  (and (search-forward "[" nil t)
+	       (goto-char (match-beginning 0))))
+      (let ((game (chess-game-create)))
+	(chess-game-set-tags game nil)
+	(while (looking-at (rx
+			    ?\[ (group (one-or-more (not (syntax whitespace))))
+			       (one-or-more (syntax whitespace))
+			       (syntax string-quote)
+			       (group (*? not-newline))
+			       (syntax string-quote)
+			       ?\]
+			    (one-or-more (char ?  ?\n ?\r ?\t))))
+	  (chess-game-set-tag game (match-string-no-properties 1)
+			      (match-string-no-properties 2))
+	  (goto-char (match-end 0)))
+	(let ((fen (chess-game-tag game "FEN")))
+	  (when fen
+	    (chess-game-set-start-position game (chess-fen-to-pos fen))))
+	(chess-game-set-plies game (chess-pgn-read-plies game (chess-game-pos game) t))
+	game)
+    (error "Data not in legal PGN format: '%s'"
+	   (buffer-substring (point) (point-max)))))
 
 (defun chess-pgn-insert-annotations (game index ply)
   (dolist (ann (chess-pos-annotations (chess-ply-pos ply)))
     (if (stringp ann)
 	(insert "\n{" ann "}")
-      (assert (listp ann))
+      (cl-assert (listp ann))
       (chess-pgn-insert-plies game index ann))))
 
 (defun chess-pgn-insert-plies (game index plies &optional
-				     for-black indented no-annotations)
+				     for-black _indented no-annotations)
   "NYI: Still have to implement INDENTED argument."
   (while plies
     (unless for-black
@@ -158,7 +232,7 @@ PGN text."
 	      tags (cdr tags))))
     index))
 
-(defun chess-insert-pgn (game &optional indented)
+(defun chess-insert-pgn (game &optional _indented)
   (let ((fen (chess-game-tag game "FEN"))
 	(first-pos (chess-game-pos game 0)))
     (when (and fen (not (string= fen (chess-pos-to-fen first-pos))))
@@ -180,9 +254,8 @@ PGN text."
 			   (t (string-lessp left right))))))))
     (insert (format "[%s \"%s\"]\n" (car tag) (cdr tag))))
   (insert ?\n)
-  (let ((begin (point)))
-    (chess-pgn-insert-plies game 1 (chess-game-plies game))
-    (insert (or (chess-game-tag game "Result") "*") ?\n)))
+  (chess-pgn-insert-plies game 1 (chess-game-plies game))
+  (insert (or (chess-game-tag game "Result") "*") ?\n))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -190,7 +263,6 @@ PGN text."
 ;;
 
 (require 'chess-database)
-(require 'chess-file)
 
 (defvar chess-pgn-database nil
   "Chess database object.")
@@ -209,6 +281,8 @@ PGN text."
 (chess-message-catalog 'english
   '((could-not-read-pgn . "Could not read or find a PGN game")))
 
+(declare-function chess-create-display "chess.el" (perspective &optional modules-too))
+
 ;;;###autoload
 (defun chess-pgn-read (&optional file)
   "Read and display a PGN game after point."
@@ -224,11 +298,21 @@ PGN text."
 	 game)
       (chess-error 'could-not-read-pgn))))
 
+(defvar chess-pgn-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map text-mode-map)
+    (define-key map [(control ?c) (control ?c)] 'chess-pgn-show-position)
+    (define-key map [mouse-2] 'chess-pgn-mouse-show-position)
+
+    ;;(define-key map [(control ?m)] 'chess-pgn-move)
+    ;;(define-key map [space] 'chess-pgn-move)
+    (define-key map [? ] 'chess-pgn-insert-and-show-position)
+    (define-key map [tab] 'chess-pgn-complete-move)
+    map))
+
 ;;;###autoload
 (define-derived-mode chess-pgn-mode text-mode "PGN"
   "A mode for editing chess PGN files."
-  (make-variable-buffer-local 'comment-start)
-  (make-variable-buffer-local 'comment-end)
   (setq comment-start "{"
 	comment-end "}")
 
@@ -238,23 +322,12 @@ PGN text."
 
   (if (fboundp 'font-lock-mode)
       (font-lock-mode 1))
-
-  (let ((map (current-local-map)))
-    (define-key map [(control ?c) (control ?c)] 'chess-pgn-show-position)
-    (define-key map [mouse-2] 'chess-pgn-mouse-show-position)
-
-    ;;(define-key map [(control ?m)] 'chess-pgn-move)
-    ;;(define-key map [space] 'chess-pgn-move)
-    ;;(define-key map [? ] 'chess-pgn-move)
-
-    (when (require 'pcomplete nil t)
-      (set (make-variable-buffer-local 'pcomplete-default-completion-function)
-	   'chess-pgn-completions)
-      (set (make-variable-buffer-local 'pcomplete-command-completion-function)
-	   'chess-pgn-completions)
-      (set (make-variable-buffer-local 'pcomplete-parse-arguments-function)
-	   'chess-pgn-current-word)
-      (define-key map [tab] 'chess-pgn-complete-move))))
+  (set (make-local-variable 'pcomplete-default-completion-function)
+       #'chess-pgn-completions)
+  (set (make-local-variable 'pcomplete-command-completion-function)
+       #'chess-pgn-completions)
+  (set (make-local-variable 'pcomplete-parse-arguments-function)
+       #'chess-pgn-current-word))
 
 ;;;###autoload
 (defalias 'pgn-mode 'chess-pgn-mode)
@@ -289,7 +362,7 @@ PGN text."
   (let ((position (chess-game-pos chess-pgn-current-game
 				  chess-pgn-current-index)))
     (while (pcomplete-here
-	    (mapcar 'chess-ply-to-algebraic
+	    (mapcar #'chess-ply-to-algebraic
 		    (chess-legal-plies position :color
 				       (chess-pos-side-to-move position)))))))
 
@@ -314,13 +387,15 @@ PGN text."
   (save-excursion
     (when location (goto-char location))
     (if (re-search-backward chess-pgn-move-regexp nil t)
-	(let* ((index (string-to-int (match-string 2)))
-	       (first-move (match-string 3))
+	(let* ((index (string-to-number (match-string 2)))
+	       ;; (first-move (match-string 3))
 	       (second-move (match-string 14))
 	       (ply (1+ (* 2 (1- index)))))
 	  (if second-move
 	      (setq ply (1+ ply)))
 	  ply))))
+
+(defvar chess-file-locations nil)
 
 (defun chess-pgn-read-game ()
   "Load a database to represent this file if not already up."
@@ -346,6 +421,8 @@ PGN text."
 					   'database-index)))
 	(setq chess-pgn-current-game
 	      (chess-database-read chess-pgn-database index))))))
+
+(defvar chess-game-inhibit-events)
 
 (defun chess-pgn-create-display ()
   "Return the move index associated with point."
@@ -392,12 +469,17 @@ This does not require that the buffer be in PGN mode."
 
 (defun chess-pgn-mouse-show-position (event)
   (interactive "e")
-  (if (fboundp 'event-window)		; XEmacs
+  (if (featurep 'xemacs)
       (progn
 	(set-buffer (window-buffer (event-window event)))
 	(and (event-point event) (goto-char (event-point event))))
     (set-buffer (window-buffer (posn-window (event-start event))))
     (goto-char (posn-point (event-start event))))
+  (chess-pgn-show-position))
+
+(defun chess-pgn-insert-and-show-position ()
+  (interactive)
+  (self-insert-command 1)
   (chess-pgn-show-position))
 
 (provide 'chess-pgn)

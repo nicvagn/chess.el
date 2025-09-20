@@ -1,11 +1,30 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; chess-autosave.el --- A special kind of display that merely autosaves the game  -*- lexical-binding: t; -*-
 ;;
-;; A special kind of display that merely autosaves the game
+;; Copyright (C) 2002-2020 Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This is free software; you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
 ;;
+;; This is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+;; for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Code:
 
 (require 'chess-game)
 (require 'chess-database)
 (require 'chess-message)
+(require 'chess-module)
 
 (defgroup chess-autosave nil
   "A special display that autosaves after each move."
@@ -13,8 +32,7 @@
 
 (defcustom chess-autosave-file "~/.chess-save"
   "Filename in which to autosave chess games."
-  :type '(choice file (const :tag "Do not auto-save" nil))
-  :group 'chess-autosave)
+  :type '(choice file (const :tag "Do not auto-save" nil)))
 
 (defcustom chess-autosave-database nil
   "If non-nil, a chess database file in which completed games are appended.
@@ -23,8 +41,7 @@ work of saving the game object to whichever database(s) it chooses.
 Whether it closes those databases or caches them for later use is up
 to the user."
   :type '(choice (const :tag "Do not save completed games" nil)
-		 file function)
-  :group 'chess-autosave)
+		 file function))
 
 (chess-message-catalog 'english
   '((chess-read-autosave    . "There is a chess autosave file, read it? ")
@@ -32,7 +49,7 @@ to the user."
     (chess-disable-autosave . "Disable autosaving for this game? ")
     (autosave-available     . "There is an autosave file; type ~ after connecting to read it")))
 
-(defun chess-autosave-handler (game event &rest args)
+(defun chess-autosave-handler (game event &rest _args)
   (cond
    ((eq event 'initialize)
     (kill-buffer (current-buffer))
@@ -96,8 +113,8 @@ to the user."
 	(setq changes (cdr changes)))))
   (insert ")"))
 
-(defun chess-autosave-write (game file)
-  "Write a chess GAME to FILE as raw Lisp."
+(defun chess-autosave-write (game _file)
+  "Write a chess GAME to FILE as raw Lisp." ;FIXME: `file' is not used!
   (let ((index (chess-game-index game)))
     (if (or (= 1 index) (and (bobp) (eobp)))
 	(progn
@@ -116,8 +133,8 @@ to the user."
     (basic-save-buffer)
     (message nil)))
 
-(defun chess-autosave-read (game file)
-  "Read a chess game as raw Lisp from FILE."
+(defun chess-autosave-read (game _file)
+  "Read a chess game as raw Lisp from FILE." ;FIXME: `file' is not used!
   (goto-char (point-min))
   (chess-game-set-tags game (read (current-buffer)))
   (let* ((plies (read (current-buffer)))

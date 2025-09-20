@@ -1,43 +1,57 @@
-;;; chess-ics.el --- An engine for interacting with Internet Chess Servers
+;;; chess-ics.el --- Play on Internet Chess Servers  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2002, 2003, 2004  Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
 
 ;; Author: John Wiegley
 ;; Maintainer: Mario Lang <mlang@delysid.org>
 ;; Keywords: games, processes
 
-;; This file is free software; you can redistribute it and/or modify
+;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation; either version 2, or (at your option)
-;; any later version.
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
 
-;; This file is distributed in the hope that it will be useful,
+;; This program is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs; see the file COPYING.  If not, write to
-;; the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-;; Boston, MA 02111-1307, USA.
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-(eval-when-compile (require 'cl))
+;;; Commentary:
 
+;; This module allows to play chess on an Internet Chess Server.
+;; Contrary to other chess engine modules for chess.el, you are not supposed to
+;; use `chess-ics' as an engine for `M-x chess', rather, you call
+;; `M-x chess-ics' directly to play chess on the internet.
+;;
+;; The two major Internet Chess Servers, freechess.org and chessclub.com
+;; are both supported.  See `chess-ics-server-list' for the supported servers.
+
+;;; Code:
+
+(require 'cl-lib)
 (require 'comint)
+
 (require 'chess)
 (require 'chess-network)
 (require 'chess-pos)
 
-(eval-when-compile (require 'rx))
+(eval-when-compile
+  (require 'rx)
+  (require 'sort))
 
 (defgroup chess-ics nil
   "Engine for interacting with Internet Chess Servers."
-  :group 'chess-engine)
+  :group 'chess
+  :link '(custom-manual "(chess)Internet Chess Servers"))
 
 (defcustom chess-ics-server-list '(("freechess.org" 5000)
 				   ("chess.unix-ag.uni-kl.de" 5000)
-				   ("chess.mds.mdh.se" 5000)
-				   ("chessclub.com" 5000))
+				   ("chessclub.com" 5000)
+				   ("chess.net" 5000)
+				   ("oics.olympuschess.com" 5000))
   "A list of servers to connect to.
 The format of each entry is:
 
@@ -52,8 +66,7 @@ The format of each entry is:
 		       (choice (const :tag "Direct connection" nil)
 			       (file :tag "Command"))
 		       (choice (const :tag "No arguments" nil)
-			       (repeat string))))
-  :group 'chess-ics)
+			       (repeat string)))))
 
 
 
@@ -79,15 +92,13 @@ The format is (SERVER COMMANDS...) where SERVER is either the server-name
 \(see `chess-ics-server-list') or nil, which is the default to use for all
 servers which do not have a specialized entry in this list.  COMMAND is a
 string which should be sent (newline characters will be added automatically.)"
-  :group 'chess-ics
   :type '(repeat
 	  (list :tag "Initialisation for"
 		(choice (string :tag "Server Name") (const :tag "Default" nil))
 		(repeat :inline t (string :tag "Command")))))
 
 (defcustom chess-ics-prompt-regexp "\\(?:[0-2][0-9]:[0-6][0-9]_\\)?[af]ics% $"
-  "*Regexp which matches an ICS prompt."
-  :group 'chess-ics
+  "Regexp which matches an ICS prompt."
   :type 'regexp)
 
 (defvar chess-ics-server nil
@@ -113,8 +124,7 @@ and ICC.")
 (make-variable-buffer-local 'chess-ics-server-type)
 
 (defcustom chess-ics-icc-datagrams '(22 23 26 33 50 51 56 110 111)
-  "*A list of datagrams to request when connecting to ICC."
-  :group 'chess-ics
+  "A list of datagrams to request when connecting to ICC."
   :type '(repeat (choice (const :tag "DG_SEND_MOVES" 24)
 			 (const :tag "DG_KIBITZ" 26)
 			 (const :tag "DG_MOVE_ALGEBRAIC" 33)
@@ -158,7 +168,8 @@ standard position).  In those cases, this variable should be set to nil.")
     (failed-ics-parse  . "Failed to parse ICS move string (%s): ")))
 
 (defconst chess-ics-style12-regexp
-  (rx (and "<12> " (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
+  (rx (and "<12> "
+	   (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
  	   (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
  	   (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
  	   (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
@@ -166,15 +177,21 @@ standard position).  In those cases, this variable should be set to nil.")
 	   (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
 	   (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
 	   (group (repeat 8 (in "-pnbrqkPNBRQK"))) " "
- 	   (group (in "BW")) ? (group (and (? ?-) (in "0-7"))) ? 
- 	   (group (and (? ?-) digit)) ? (group (and (? ?-) digit)) ? 
-  	   (group (and (? ?-) digit)) ? (group (and (? ?-) digit)) ? 
- 	   (group (+ digit)) " "
- 	   (group (+ digit)) " "
-  	   (group (+ (not (in " ")))) " " (group (+ (not (in " ")))) " "
+ 	   (group (in "BW")) " "
+	   (group (and (? ?-) (in "0-7"))) " "
+ 	   (group (and (? ?-) digit)) " "
+	   (group (and (? ?-) digit)) " "
   	   (group (and (? ?-) digit)) " "
- 	   (group (+ digit)) " " (group (+ digit)) " "
- 	   (group (+ digit)) " " (group (+ digit)) " "
+	   (group (and (? ?-) digit)) " "
+ 	   (group (+ digit)) " "
+ 	   (group (+ digit)) " "
+  	   (group (+ (not (in " ")))) " "
+	   (group (+ (not (in " ")))) " "
+  	   (group (and (? ?-) digit)) " "
+ 	   (group (+ digit)) " "
+	   (group (+ digit)) " "
+ 	   (group (+ digit)) " "
+	   (group (+ digit)) " "
  	   (group (and (? ?-) (+ digit))) " "
  	   (group (and (? ?-) (+ digit))) " "
  	   (group (+ digit)) " "
@@ -192,9 +209,9 @@ standard position).  In those cases, this variable should be set to nil.")
 	 (function
 	  (lambda ()
 	    (when chess-ics-handling-login
-	      (setq chess-ics-server-type 'ICC
-		    comint-preoutput-filter-functions
-		    '(chess-icc-preoutput-filter)))
+	      (setq chess-ics-server-type 'ICC)
+	      (add-hook 'comint-preoutput-filter-functions
+		        #'chess-icc-preoutput-filter nil t))
 	    'once)))
    (cons "\\(ogin\\|name\\):"
 	 (function
@@ -203,7 +220,7 @@ standard position).  In those cases, this variable should be set to nil.")
 	      (chess-ics-send
 	       (format "level2settings=%s"
 		       (let ((str (make-string
-				   (1+ (apply 'max chess-ics-icc-datagrams))
+				   (1+ (apply #'max chess-ics-icc-datagrams))
 				   ?0)))
 			 (dolist (dg chess-ics-icc-datagrams str)
 			   (aset str dg ?1))))))
@@ -229,11 +246,17 @@ standard position).  In those cases, this variable should be set to nil.")
 	  (lambda ()
 	    (chess-ics-send "")
 	    'once)))
+   (cons "Press return to enter chess.net as \"\\([^\"]+\\)\":"
+	 (function
+	  (lambda ()
+	    (setq chess-ics-handle (match-string 1))
+	    (chess-ics-send "")
+	    'once)))
    (cons "%\\s-*$"
 	 (function
 	  (lambda ()
 	    (chess-ics-send
-	     (mapconcat 'identity
+	     (mapconcat #'identity
 			(cdr
 			 (or
 			  (assoc chess-ics-server chess-ics-initial-commands)
@@ -270,7 +293,7 @@ standard position).  In those cases, this variable should be set to nil.")
 		  (delete-region (1- (match-beginning 0)) (match-end 0))))
 	      (when game-num
 		(chess-game-run-hooks
-		 (chess-ics-game (string-to-int game-num))
+		 (chess-ics-game (string-to-number game-num))
 		 'kibitz (buffer-substring text-begin (line-end-position))))
 	      (when (> (- (line-end-position) (line-beginning-position))
 		       fill-column)
@@ -284,7 +307,7 @@ standard position).  In those cases, this variable should be set to nil.")
    (cons "{Game \\([0-9]+\\) (\\(\\S-+\\) vs\\. \\(\\S-+\\)) Creating [^ ]+ \\([^ ]+\\).*}"
 	 (function
 	  (lambda ()
-	    (let ((game-number (string-to-int (match-string 1)))
+	    (let ((game-number (string-to-number (match-string 1)))
 		  (white (match-string-no-properties 2))
 		  (black (match-string-no-properties 3)))
 	      (message "Creating game %d (%s vs. %s)" game-number white black)
@@ -293,17 +316,17 @@ standard position).  In those cases, this variable should be set to nil.")
    (cons "^Game \\([0-9]+\\): \\S-+ backs up \\([0-9]+\\).$"
 	 (function
 	  (lambda ()
-	    (chess-game-undo (chess-ics-game (string-to-int (match-string 1)))
-			     (string-to-int (match-string 2))))))
+	    (chess-game-undo (chess-ics-game (string-to-number (match-string 1)))
+			     (string-to-number (match-string 2))))))
    (cons chess-ics-style12-regexp #'chess-ics-handle-style12)
    (cons "Removing game \\([0-9]+\\) from observation list.$"
 	 (function
 	  (lambda ()
-	    (chess-ics-game-destroy (string-to-int (match-string 1))))))
+	    (chess-ics-game-destroy (string-to-number (match-string 1))))))
    (cons "You are no longer examining game \\([0-9]+\\).$"
 	 (function
 	  (lambda ()
-	    (chess-ics-game-destroy (string-to-int (match-string 1))))))
+	    (chess-ics-game-destroy (string-to-number (match-string 1))))))
    (cons "^Movelist for game \\([0-9]+\\):$"
 	 (function
 	  (lambda ()
@@ -311,7 +334,7 @@ standard position).  In those cases, this variable should be set to nil.")
 		    chess-ics-movelist-game)
 		(message "[movelist] left-over movelist-game[-number]")
 	      (setq chess-ics-movelist-game-number
-		    (string-to-int (match-string 1)))))))
+		    (string-to-number (match-string 1)))))))
    (cons "^Move\\s-+\\*?\\(\\S-+\\)\\s-+\\*?\\(\\S-+\\)\\s-*$"
 	 (function
 	  (lambda ()
@@ -344,7 +367,7 @@ standard position).  In those cases, this variable should be set to nil.")
 	 (function
 	  (lambda ()
 	    (funcall chess-engine-response-handler 'undo
-		     (string-to-int (match-string 1))))))
+		     (string-to-number (match-string 1))))))
    (cons "The game has been aborted on move [^.]+\\."
 	 (function
 	  (lambda ()
@@ -360,7 +383,7 @@ standard position).  In those cases, this variable should be set to nil.")
      (lambda ()
        (let ((chess-engine-handling-event t)
 	     (opponent-p (not (string= chess-ics-handle (match-string 4))))
-	     (game (chess-ics-game (string-to-int (match-string 1))
+	     (game (chess-ics-game (string-to-number (match-string 1))
 				   :White (match-string 2)
 				   :Black (match-string 3))))
 	 (with-current-buffer (chess-game-data game 'engine)
@@ -386,7 +409,14 @@ standard position).  In those cases, this variable should be set to nil.")
 	    (let ((opponent (match-string 1)))
 	      (if (y-or-n-p (chess-string 'want-to-play opponent))
 		  (chess-ics-send (concat "accept " opponent))
-		(chess-ics-send "decline match")))))))
+		(chess-ics-send "decline match"))))))
+   ;; Buttonize URLs.
+   (cons "\"?\\(\\(https?\\|ftp\\)://[^ \t\n\r\"]+\\)\"?"
+	 (function
+	  (lambda ()
+	    (make-button (match-beginning 1) (match-end 1)
+			 'action (lambda (button)
+				   (browse-url (button-label button))))))))
   "An alist of regular expressions to use to scan ICS server output.
 The car of each element is the regexp to try, and the cdr is a function
 to run whenever the regexp matches.")
@@ -398,8 +428,8 @@ See `chess-ics-game'.")
 
 (defun chess-ics-game (game-number &rest tags)
   "Either create, or retrieve an existing game object with GAME-NUMBER."
-  (assert (integerp game-number))
-  (assert (or (evenp (length tags)) (eq (car tags) t)))
+  (cl-assert (integerp game-number))
+  (cl-assert (or (zerop (logand (length tags) 1)) (eq (car tags) t)))
   (or
    ;; First try to find a game which matches the constraints in TAGS
    (catch 'ics-game
@@ -413,10 +443,10 @@ See `chess-ics-game'.")
 	       (if (or (null tags) (eq (car tags) t))
 		   (throw 'ics-game game)
 		 (while tag-pairs
-		   (assert (symbolp (car tag-pairs)))
+		   (cl-assert (symbolp (car tag-pairs)))
 		   (let ((tag (substring (symbol-name (car tag-pairs)) 1))
 			 (val (cadr tag-pairs)))
-		     (assert (stringp val))
+		     (cl-assert (stringp val))
 		     (if (string= (chess-game-tag game tag) val)
 			 (setq tag-pairs (cddr tag-pairs))
 		       (if (not (string= (chess-game-tag game tag) "?"))
@@ -432,19 +462,17 @@ See `chess-ics-game'.")
      (push (let (chess-engine-handling-event)
 	     (chess-session 'chess-ics))
 	   chess-ics-sessions)
-     (assert (caar chess-ics-sessions))
+     (cl-assert (caar chess-ics-sessions))
      (let ((game (chess-engine-game (caar chess-ics-sessions))))
        (chess-game-set-data game 'ics-game-number game-number)
        (chess-game-set-data game 'ics-buffer (current-buffer))
        (chess-game-set-tag game "Site" chess-ics-server)
        (while tags
-	 (assert (keywordp (car tags)))
+	 (cl-assert (keywordp (car tags)))
 	 (chess-game-set-tag
 	  game (substring (symbol-name (car tags)) 1) (cadr tags))
 	 (setq tags (cddr tags)))
        game))))
-
-(defvar last-triggers nil)
 
 (defun chess-ics-game-destroy (game-number &rest tags)
   (let ((sessions chess-ics-sessions)
@@ -452,37 +480,37 @@ See `chess-ics-game'.")
     (while sessions
       (if (not (buffer-live-p (caar sessions)))
 	  (message "Found dead engine session in `chess-ics-sessions'")
-	(let ((game (chess-display-game (cadar sessions)))
+	(let ((game (chess-display-game (cl-cadar sessions)))
 	      (tag-pairs tags)
 	      (found t))
 	  (when (= game-number (chess-game-data game 'ics-game-number))
 	    (if (null tags)
 		(progn
-		  (chess-display-destroy (cadar sessions))
+		  (chess-display-destroy (cl-cadar sessions))
 		  (if last-session
 		      (setcdr last-session (cdr sessions))
 		    (setq chess-ics-sessions (cdr sessions))))
 	      (while (and tag-pairs found)
-		(assert (symbolp (car tag-pairs)))
+		(cl-assert (symbolp (car tag-pairs)))
 		(let ((tag (substring (symbol-name (car tag-pairs)) 1))
 		      (val (cadr tag-pairs)))
-		  (assert (stringp val))
+		  (cl-assert (stringp val))
 		  (if (string= (chess-game-tag game tag) val)
 		      (setq tag-pairs (cddr tag-pairs))
 		    (setq found nil))))
 	      (if (not found)
 		  (error "Game not found")
-		(chess-engine-destroy (cadar sessions))
+		(chess-engine-destroy (cl-cadar sessions))
 		(if last-session
 		    (setcdr last-session (cdr sessions))
 		  (setq chess-ics-sessions (cdr sessions))))))))
-      (setq last-triggers sessions
+      (setq last-session sessions
 	    sessions (cdr sessions)))))
 
 (defun chess-ics-handle-movelist-item ()
   ;; TBD: time taken per ply
   (let ((chess-engine-handling-event t)
-	(seq (string-to-int (match-string 1)))
+	(seq (string-to-number (match-string 1)))
 	(wmove (match-string 2))
 	(bmove (match-string 14))
 	(game chess-ics-movelist-game))
@@ -518,7 +546,7 @@ See `chess-ics-game'.")
 			     (chess-pos-set-piece
 			      pos (chess-rf-to-index r f) (aref rank f))))))
 		     (chess-pos-set-side-to-move pos (string= (match-string 9) "W"))
-		     (let ((file (string-to-int (match-string 10))))
+		     (let ((file (string-to-number (match-string 10))))
 		       (when (>= file 0)
 			 (chess-pos-set-en-passant
 			  pos (chess-rf-to-index
@@ -528,7 +556,7 @@ See `chess-ics-game'.")
 				 (chess-pos-set-can-castle pos (car info) t)))
 			   '((?K . 11) (?Q . 12) (?k . 13) (?q . 14))) pos))
 	 (game (save-match-data
-		 (chess-ics-game (string-to-int (match-string 16))
+		 (chess-ics-game (string-to-number (match-string 16))
 				 :White (match-string 17)
 				 :Black (match-string 18))))
 	 (status
@@ -540,26 +568,26 @@ See `chess-ics-game'.")
 	  ;; -1 I am playing, it is my opponent's move
 	  ;;  1 I am playing and it is my move
 	  ;;  0 I am observing a game being played
-	  (string-to-int (match-string 19))))
+	  (string-to-number (match-string 19))))
     (when (or (= status 2) (= status -2) (= status 0))
       (chess-game-set-data game 'my-color (chess-pos-side-to-move position)))
     ;; initial time and increment (in seconds) of the match
     (chess-game-set-tag
      game "TimeControl" (format "%s/%s" (match-string 20) (match-string 21)))
     ;; material values for each side
-    (let ((centipawn (* 100 (- (string-to-int (match-string 22))
-			       (string-to-int (match-string 23))))))
+    (let ((centipawn (* 100 (- (string-to-number (match-string 22))
+			       (string-to-number (match-string 23))))))
       (chess-pos-set-epd position 'ce (if (chess-pos-side-to-move position)
 					  centipawn (- centipawn))))
     ;; White's and Black's remaining time
-    (chess-game-set-data game 'white-remaining (string-to-int (match-string 24)))
-    (chess-game-set-data game 'black-remaining (string-to-int (match-string 25)))
-    (let ((index (- (* (string-to-int (match-string 26)) 2)
+    (chess-game-set-data game 'white-remaining (string-to-number (match-string 24)))
+    (chess-game-set-data game 'black-remaining (string-to-number (match-string 25)))
+    (let ((index (- (* (string-to-number (match-string 26)) 2)
 		    (if (eq (chess-game-data game 'black-moved-first) t)
 			(if (chess-pos-side-to-move position) 3 2)
 		      (if (chess-pos-side-to-move position) 2 1))))
 	  (move (unless (string= (match-string 29) "none")
-		  (case (aref (match-string 29) (1- (length (match-string 29))))
+		  (cl-case (aref (match-string 29) (1- (length (match-string 29))))
 		    (?+ (chess-pos-set-status position :check))
 		    (?# (chess-pos-set-status position :checkmate)
 			(chess-pos-set-epd position 'ce 32767)))
@@ -589,21 +617,30 @@ See `chess-ics-game'.")
 		    (chess-game-move game ply)
 		    (setq error nil))
 		(if (= index (chess-game-index game))
-		    (setq error 'refresh) ; Ignore a "refresh" command
+		    ;; this is a refresh, which we can use to verify that our
+		    ;; notion of the game's current position is correct
+		    (let ((their-fen (chess-pos-to-fen position))
+			  (our-fen (chess-pos-to-fen (chess-game-pos game))))
+		      (if (string= their-fen our-fen)
+			  (setq error nil) ; ignore the refresh
+			(setq error
+			      (format "comparing-position (%s != %s)"
+				      their-fen our-fen))))
 		  (if (and (> index (1+ (chess-game-index game)))
-			     (= 1 (chess-game-seq game)))
-		    ;; we lack a complete game, try to get it via the movelist
-		    (progn
-		      (setq error nil)
-		      (chess-ics-send
-		       (format "moves %d"
-			       (chess-game-data game 'ics-game-number))))
+			   (= 1 (chess-game-seq game)))
+		      ;; we lack a complete game, try to get it via the
+		      ;; movelist
+		      (progn
+			(setq error nil)
+			(chess-ics-send
+			 (format "moves %d"
+				 (chess-game-data game 'ics-game-number))))
 		    (setq error
-			  (format "comparing-index (%d:%d)" index (chess-game-index game))))))
+			  (format "comparing-index (%d:%d)"
+				  index (chess-game-index game))))))
 	    ;; no preceeding ply supplied, so this is a starting position
 	    (let ((chess-game-inhibit-events t)
-		  (color (chess-pos-side-to-move position))
-		  plies)
+		  (color (chess-pos-side-to-move position)))
 	      (when (or (= 1 status) (= -1 status))
 		(chess-game-set-data game 'my-color (if (= 1 status)
 							color (not color)))
@@ -627,193 +664,77 @@ See `chess-ics-game'.")
 	  (forward-line -1)))
       t)))
 
-(defface chess-ics-seek-button '((((type pc) (class color))
-				  (:foreground "lightblue"))
-				 (t :underline t))
-  "Default face used for seek buttons."
-  :group 'chess-ics)
-
-(defvar chess-ics-seek-button-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map "\r" 'chess-ics-push-seek-button)
-    (define-key map [mouse-2] 'chess-ics-push-seek-button)
-    map)
-  "Keymap used by seek buttons.")
-
 (defvar chess-ics-sought-parent-buffer nil
   "Contains the buffer from which this seektable originates.")
 (make-variable-buffer-local 'chess-ics-sought-parent-buffer)
 
-(defun chess-ics-sought-accept (&optional pos)
-  "Perform the action specified by a button at location POS.
-POS may be either a buffer position or a mouse-event.
-POS defaults to point, except when `push-button' is invoked
-interactively as the result of a mouse-event, in which case, the
-mouse event is used.
-If there's no button at POS, do nothing and return nil, otherwise
-return t."
-  (interactive
-   (list (if (integerp last-command-event) (point) last-command-event)))
-  (if (and (not (integerp pos)) (eventp pos))
-      ;; POS is a mouse event; switch to the proper window/buffer
-      (let ((posn (event-start pos)))
-        (with-current-buffer (window-buffer (posn-window posn))
-          (push-button (posn-point posn) t)))
-    ;; POS is just normal position
-    (let ((command (get-char-property pos 'ics-command)))
-      (when (stringp command)
-	(chess-ics-send command chess-ics-sought-parent-buffer)
-	t))))
+(defun chess-ics-sought-accept (button)
+  "Perform the action specified by a BUTTON."
+  (let ((buffer (button-get button 'ics-buffer))
+	(command (button-get button 'ics-command)))
+    (when (and (buffer-live-p buffer) (stringp command))
+      (chess-ics-send command buffer)
+      t)))
 
-(defvar chess-ics-popup-sought t
-  "*If non-nil, display the sought buffer automatically.")
+(defcustom chess-ics-popup-sought t
+  "If non-nil, display the sought buffer automatically."
+  :type 'boolean)
 
 (defcustom chess-ics-sought-buffer-name "*chess-ics-sought*"
-  "*The name of the buffer which accumulates seek ads."
-  :group 'chess-ics
+  "The name of the buffer which accumulates seek ads."
   :type 'string)
 
-(defvar chess-ics-sought-sort-state nil
-  "Determines the order for seek ads in the sought buffer.
-If nil, do not sort entries, i.e., keep the order of arrival.")
-(make-variable-buffer-local 'chess-ics-sought-sort-state)
-
-(defvar chess-ics-sought-sort-direction nil
-  "Determines the direction of sorting for seek ads in the sought buffer.
-If nil, ads are sorted in ascending order, if non-nil, they are sorted in
-descending order.")
-(make-variable-buffer-local 'chess-ics-sought-sort-direction)
-
-(defun chess-ics-sought-sort ()
-  (case chess-ics-sought-sort-state
-   (id     (sort-numeric-fields 1 (point-min) (point-max)))
-   (player (sort-fields 2 (point-min) (point-max)))
-   (rating (sort-numeric-fields 3 (point-min) (point-max)))
-   (time   (sort-numeric-fields 5 (point-min) (point-max)))
-   (inc    (sort-numeric-fields 6 (point-min) (point-max))))
-  (and chess-ics-sought-sort-state
-       chess-ics-sought-sort-direction
-       (reverse-region (point-min) (point-max))))
-
-(defun chess-ics-sought-toggle-sort-state ()
-  (interactive)
-  (setq chess-ics-sought-sort-state
-	(case chess-ics-sought-sort-state
-	  ((id) 'player)
-	  ((player) 'rating)
-	  ((rating) 'time)
-	  ((time) 'inc)
-	  ((inc) nil)
-	  ((nil) 'id)))
-  (message "Sorting ads by %s..."
-	   (case chess-ics-sought-sort-state
-	     ((id) "ID")
-	     ((player) "player name")
-	     ((rating) "rating (ascending)")
-	     ((reverse-rating) "rating (descending)")
-	     ((time) "initial time")
-	     ((inc) "time increment")
-	     ((nil) "arrival")))
-  (chess-ics-sought-sort))
-
-(defun chess-ics-sought-toggle-sort-direction ()
-  (interactive)
-  (message "Sorting %sscending direction..."
-	   (if (setq chess-ics-sought-sort-direction
-		     (not chess-ics-sought-sort-direction))
-	       "de" "a"))
-  (chess-ics-sought-sort))
-
-(defcustom chess-ics-sought-mode-line-format
-  '("-" mode-line-mule-info mode-line-modified mode-line-frame-identification
-   "   "
-   global-mode-string
-   "   %[("
-   (:eval (mode-line-mode-name))
-   minor-mode-alist
-   "%n"
-   ")%]--"
-   (:eval (format "[%d ads displayed]" (count-lines (point-min) (point-max))))
-   "-%-")
-  "Mode line data for ICS sought mode."
-  :group 'chess-ics
-  :type 'sexp)
-
-(defvar chess-ics-sought-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map "\r" 'chess-ics-sought-accept)
-    (define-key map [mouse-2] 'chess-ics-sought-accept)
-    (define-key map [??] 'describe-mode)
-    (define-key map [?s] 'chess-ics-sought-toggle-sort-state)
-    (define-key map [? ] 'chess-ics-sought-toggle-sort-direction)
-    map)
-  "Keymap for `chess-ics-sought-mode'.")
-
-(define-derived-mode chess-ics-sought-mode fundamental-mode "Seek Ads"
-  "A mode for displaying ICS game seek advertisments."
-  (let ((map (current-local-map)))
-    (define-key map "\r" 'chess-ics-sought-accept)
-    (define-key map [mouse-2] 'chess-ics-sought-accept)
-    (define-key map [return] 'chess-ics-sought-accept)
-    (define-key map [??] 'describe-mode)
-    (define-key map [?s] 'chess-ics-sought-toggle-sort-state)
-    (define-key map [? ] 'chess-ics-sought-toggle-sort-direction)
-    (define-key map [?n] 'next-line)
-    (define-key map [?p] 'previous-line))
-  (setq sort-fold-case t
-	mode-line-format chess-ics-sought-mode-line-format
-	header-line-format
-	'((3 . "ID") " "
-	  (20 "Player") " "
-	  (4 . "Elo") " "
-	  "Rated" " "
-	  (7 . "  Time") " "
-	  "Variant%-")))
+(define-derived-mode chess-ics-ads-mode tabulated-list-mode "ICSAds"
+  "Mode for displaying sought games from Internet Chess Servers."
+  (setq tabulated-list-format [("Player" 20 t)
+			       ("Rating" 10 t :right-align t)
+			       ("Rated" 5 nil :right-align t)
+			       ("Time" 4 t :right-align t)
+			       ("Inc" 4 t)
+			       ("Variant" 40 t)])
+  (setq tabulated-list-entries nil)
+  (tabulated-list-init-header)
+  (tabulated-list-print))
 
 (defun chess-ics-sought-add (id name rating rated time inc variant
 			     ics-buffer cmd)
-  (setq id (concat id (make-string (- 4 (length id)) ? )))
-  (setq name (concat name (make-string (- 20 (length name)) ? )))
-  (setq variant (concat variant (make-string (- 25 (length variant)) ? )))
-  (with-current-buffer
+  (let ((inhibit-redisplay t))
+    (with-current-buffer
       (or (get-buffer chess-ics-sought-buffer-name)
 	  (with-current-buffer (get-buffer-create
 				chess-ics-sought-buffer-name)
-	    (chess-ics-sought-mode)
-	    (setq chess-ics-sought-parent-buffer ics-buffer)
+	    (chess-ics-ads-mode)
 	    (and chess-ics-popup-sought (display-buffer (current-buffer)))
 	    (current-buffer)))
-    (let ((here (point)))
-      (when (re-search-forward (concat "^" (regexp-quote id) " ") nil t)
-	(goto-char (line-beginning-position))
-	(delete-region (point) (1+ (line-end-position))))
-      (goto-char (point-min))
-      (let ((beg (point)))
-	(insert (format "%s %s %4d %4s  %3d/%3d %s"
-			id name rating rated time inc variant))
-	(add-text-properties
-	 beg (point)
-	 (list 'rear-nonsticky t
-	       'mouse-face 'highlight
-	       'ics-command cmd))
-	(insert "\n"))
-      (chess-ics-sought-sort)
-      (goto-char here))))
+      (setq chess-ics-sought-parent-buffer ics-buffer)
+      (add-to-list 'tabulated-list-entries
+		   (list id
+			 (vector (list name
+				       'ics-buffer ics-buffer
+				       'ics-command cmd
+				       'action #'chess-ics-sought-accept)
+ 				 (number-to-string rating)
+				 rated
+				 (number-to-string time)
+				 (number-to-string inc)
+				 variant)))
+      (tabulated-list-revert))))
 
 (defun chess-ics-seeking (string)
+  ;; jww (2008-09-02): we should use rx for this regular expression also
   (while (string-match
 	  (concat "[\n\r]+\\(\\S-+\\) (\\([0-9+ -]+\\)) seeking \\([a-z]\\S-+ \\)?\\([0-9]+\\) \\([0-9]+\\) \\(\\(un\\)?rated\\) \\([^(]*\\)(\"\\([^\"]+\\)\" to respond)\\s-*[\n\r]+"
 		  chess-ics-prompt-regexp)
 	  string)
     (let* ((pre (substring string 0 (match-beginning 0)))
 	   (post (substring string (match-end 0))))
-      (chess-ics-sought-add (substring (match-string 9 string) 5)
+      (chess-ics-sought-add (string-to-number (substring (match-string 9 string) 5))
 			    (match-string 1 string)
-			    (string-to-int (match-string 2 string))
+			    (string-to-number (match-string 2 string))
 			    (if (string= (match-string 6 string) "rated")
 				"yes" "no")
-			    (string-to-int (match-string 4 string))
-			    (string-to-int (match-string 5 string))
+			    (string-to-number (match-string 4 string))
+			    (string-to-number (match-string 5 string))
 			    (concat
 			     (if (match-string 3 string)
 				 (concat (match-string 3 string) " ") "")
@@ -831,23 +752,27 @@ This function should be put on `comint-preoutput-filter-functions'."
 	    (concat "[\n\r]+Ads removed: \\([0-9 ]+\\)\\s-*[\n\r]+"
 		    chess-ics-prompt-regexp)
 	    string)
-      (setq ids (append (save-match-data
-			  (split-string (match-string 1 string) " +")) ids))
-      (setq string (concat (substring string 0 (match-beginning 0))
+      (setq ids (append (mapcar #'string-to-number
+				(save-match-data
+				  (split-string (match-string 1 string) " +")))
+			ids)
+	    string (concat (substring string 0 (match-beginning 0))
 			   (substring string (match-end 0)))))
     (when ids
-      (let ((buf (get-buffer chess-ics-sought-buffer-name)))
+      (let ((buf (get-buffer chess-ics-sought-buffer-name))
+	    (inhibit-redisplay t))
 	(when (buffer-live-p buf)
 	  (with-current-buffer buf
-	    (let ((here (point)))
-	      (while ids
-		(goto-char (point-min))
-		(when (re-search-forward (concat "^" (car ids) " ") nil t)
-		  (delete-region (line-beginning-position)
-				 (1+ (line-end-position))))
-		(setq ids (cdr ids)))
-	      (goto-char here)))))))
+	    (let ((old-length (length tabulated-list-entries)))
+	      (setq tabulated-list-entries
+		    (cl-remove-if (lambda (entry) (member (car entry) ids))
+				  tabulated-list-entries))
+	      (when (/= (length tabulated-list-entries) old-length)
+		(tabulated-list-revert))))))))
   string)
+
+;; FIXME: This is evil!
+;;(make-variable-buffer-local 'comint-preoutput-filter-functions)
 
 ;;;###autoload
 (defun chess-ics (server port &optional handle password-or-filename
@@ -870,7 +795,7 @@ This function should be put on `comint-preoutput-filter-functions'."
     (setq handle "guest"))
   (chess-message 'ics-connecting server)
   (let ((buf (if helper
-		 (apply 'make-comint "chess-ics" helper nil helper-args)
+		 (apply #'make-comint "chess-ics" helper nil helper-args)
 	       (make-comint "chess-ics" (cons server port)))))
     (chess-message 'ics-connected server)
     (set-buffer buf)
@@ -887,39 +812,46 @@ This function should be put on `comint-preoutput-filter-functions'."
 	  chess-engine-regexp-alist (copy-alist chess-ics-matcher-alist)
 	  comint-prompt-regexp "^[^%\n]*% *"
 	  comint-scroll-show-maximum-output t)
-    (add-hook 'comint-output-filter-functions 'chess-engine-filter t t)
-    (make-variable-buffer-local 'comint-preoutput-filter-functions)
-    (setq comint-preoutput-filter-functions
-	  '(chess-ics-ads-removed chess-ics-seeking))
+    (add-hook 'comint-output-filter-functions #'chess-engine-filter t t)
+    (add-hook 'comint-preoutput-filter-functions #'chess-ics-seeking nil t)
+    (add-hook 'comint-preoutput-filter-functions #'chess-ics-ads-removed nil t)
     (let ((ntimes 50))
       (while (and chess-ics-handling-login
 		  (> (setq ntimes (1- ntimes)) 0))
 	(accept-process-output (get-buffer-process (current-buffer)) 0 100)))
     (switch-to-buffer buf)))
 
+;;;###autoload
+(define-key menu-bar-games-menu [chess-ics] '(menu-item "Internet Chess Servers" chess-ics :help "Play Chess on the Internet"))
+
+;;; ICC datagrams
+
+;; See http://www.chessclub.com/resources/formats/formats.txt
+
 (defvar chess-icc-unprocessed nil)
+
 (defun chess-icc-datagram-handler (string)
   (if (not (string-match "^\\([0-9]+\\) \\(.*\\)$" string))
       (format "\nUnknown datagram format: %s\n" string)
     (let ((chess-engine-handling-event t)
-	  (dg (string-to-int (match-string 1 string)))
+	  (dg (string-to-number (match-string 1 string)))
 	  (args (match-string 2 string)))
       (cond
        ((and (or (= dg 22) (= dg 23))
 	     (string-match "\\([0-9]+\\) \\([1-9][0-9]*\\)" args))
-	(chess-game-undo (chess-ics-game (string-to-int (match-string 1 args)))
-			 (string-to-int (match-string 2 args)))
+	(chess-game-undo (chess-ics-game (string-to-number (match-string 1 args)))
+			 (string-to-number (match-string 2 args)))
 	"")
        ((and (or (= dg 101) (= dg 110))
 	     (string-match "\\([0-9]+\\) {\\(.+\\) \\(?:[0-9]+\\) \\(?:[0-9]+\\)} \\([0-9]+\\)" args))
 	(let ((pos (chess-fen-to-pos (match-string 2 args))))
 	  (chess-game-set-start-position
-	   (chess-ics-game (string-to-int (match-string 1 args))) pos))
+	   (chess-ics-game (string-to-number (match-string 1 args))) pos))
 	"")
        ((and (or (= dg 24) (= dg 111))
 	     (string-match "^\\([0-9]+\\) \\(.+\\)$" args))
 	(let* ((move (match-string 2 args))
-	       (game (chess-ics-game (string-to-int (match-string 1 args))))
+	       (game (chess-ics-game (string-to-number (match-string 1 args))))
 	       (pos (chess-game-pos game))
 	       (ply (chess-algebraic-to-ply pos move)))
 	  (chess-game-move game ply)
@@ -942,24 +874,24 @@ This function should be put on `comint-preoutput-filter-functions'."
        ((and (= dg 56)
 	     (string-match "^\\([0-9]+\\) \\([WB]\\) \\([0-9]+\\) \\([01]\\)"
 			   args))
-	(let ((sec (/ (string-to-int (match-string 3 args)) 1000))
+	(let ((sec (/ (string-to-number (match-string 3 args)) 1000))
 	      (color (if (string= (match-string 2 args) "W")
 			 'white-remaining 'black-remaining))
-	      (game (chess-ics-game (string-to-int (match-string 1 args)))))
+	      (game (chess-ics-game (string-to-number (match-string 1 args)))))
 	  (chess-game-set-data game color sec))
 	"")
        ((and (= dg 50)
 	     (string-match "^\\([0-9]+\\) \\(\\S-+\\) {\\([^}]*\\)} \\([0-9]+\\) \\([0-2]\\) \\([0-9]+\\) \\(\\S-+\\) \\([0-9]+\\) \\([0-9]+\\) \\([01]\\) \\(-?[01]\\) \\([0-9]+\\) \\([0-9]+\\) \\([01]\\) \\([01]\\) {\\([^}]*\\)}" args))
 	(chess-ics-sought-add
-	 (match-string 1 args)
+	 (string-to-number (match-string 1 args))
 	 (concat (match-string 2 args)
 		 (if (not (string= (match-string 3 args) ""))
 		     (format "(%s)" (match-string 3 args))
 		   ""))
-	 (string-to-int (match-string 4 args))
+	 (string-to-number (match-string 4 args))
 	 (if (string= (match-string 10 args) "1") "yes" "no")
-	 (string-to-int (match-string 8 args))
-	 (string-to-int (match-string 9 args))
+	 (string-to-number (match-string 8 args))
+	 (string-to-number (match-string 9 args))
 	 (concat (match-string 7 args)
 		 (if (not (string= (match-string 6 args) "0"))
 		     (concat " " (match-string 6 args)) "")
@@ -971,19 +903,18 @@ This function should be put on `comint-preoutput-filter-functions'."
 	 (concat "play " (match-string 1 args)))
 	"")
        ((= dg 51)
-	(let ((id (car (split-string args " ")))
+	(let ((id (string-to-number (car (split-string args " +"))))
 	      (buf (get-buffer chess-ics-sought-buffer-name)))
 	  (when (buffer-live-p buf)
 	    (with-current-buffer buf
-	      (let ((here (point)))
-		(goto-char (point-min))
-		(when (re-search-forward (concat "^" id " ") nil t)
-		  (delete-region (line-beginning-position)
-				 (1+ (line-end-position))))
-		(goto-char here)))))
+	      (setq tabulated-list-entries
+		    (cl-remove-if (lambda (entry) (equal (car entry) id))
+				  tabulated-list-entries))
+	      (tabulated-list-revert))))
 	"")
        (t
-	(format "\nIgnoring datagram DG%03d: %s\n" dg args))))))
+	(format "\nIgnoring unhandled datagram DG%03d: %s\n" dg args))))))
+
 (defun chess-icc-preoutput-filter (string)
   (if chess-icc-unprocessed
       (let ((string (concat chess-icc-unprocessed string)))
@@ -1011,7 +942,7 @@ This function should be put on `comint-preoutput-filter-functions'."
 
 (defun chess-ics-icc-preoutput-filter (string)
   (while (string-match "(\\([0-9]+\\) \\(.*?\\))" string)
-    (let ((dg (string-to-int (match-string 1 string)))
+    (let ((dg (string-to-number (match-string 1 string)))
 	  (args (match-string 2 string))
 	  (pre (substring string 0 (match-beginning 0)))
 	  (post (substring string (match-end 0))))
@@ -1020,13 +951,13 @@ This function should be put on `comint-preoutput-filter-functions'."
 	     (string-match "\\([0-9]+\\) {\\(.+\\) \\(?:[0-9]+\\) \\(?:[0-9]+\\)} \\([0-9]+\\)" args))
 	(let ((pos (chess-fen-to-pos (match-string 2 args))))
 	  (chess-game-set-start-position
-	   (chess-ics-game (string-to-int (match-string 1 args))) pos))
+	   (chess-ics-game (string-to-number (match-string 1 args))) pos))
 	(setq string (concat pre post)))
        ((and (or (= dg 24) (= dg 111))
 	     (string-match "\\([0-9]+\\) \\(.+\\)$" args))
 	(let* ((chess-engine-handling-event t)
 	       (move (match-string 2 args))
-	       (game (chess-ics-game (string-to-int (match-string 1 args))))
+	       (game (chess-ics-game (string-to-number (match-string 1 args))))
 	       (pos (chess-game-pos game))
 	       (ply (chess-algebraic-to-ply pos move)))
 	  (if ply
@@ -1053,10 +984,10 @@ This function should be put on `comint-preoutput-filter-functions'."
        ((and (= dg 56)
 	     (string-match "\\([0-9]+\\) \\([WB]\\) \\([0-9]+\\) \\([01]\\)"
 			   args))
-	(let ((sec (/ (string-to-int (match-string 3 args)) 1000))
+	(let ((sec (/ (string-to-number (match-string 3 args)) 1000))
 	      (color (if (string= (match-string 2 args) "W")
 			 'white-remaining 'black-remaining))
-	      (game (chess-ics-game (string-to-int (match-string 1 args)))))
+	      (game (chess-ics-game (string-to-number (match-string 1 args)))))
 	  (chess-game-set-data game color sec))
 	(setq string (concat pre post)))
        ((and (= dg 50)
@@ -1067,11 +998,11 @@ This function should be put on `comint-preoutput-filter-functions'."
 		 (if (not (string= (match-string 3 args) ""))
 		     (format "(%s)" (match-string 3 args))
 		   ""))
-	 (string-to-int (match-string 4 args))
+	 (string-to-number (match-string 4 args))
 	 (if (string= (match-string 10 args) "1")
 	     "yes" "no")
-	 (string-to-int (match-string 8 args))
-	 (string-to-int (match-string 9 args))
+	 (string-to-number (match-string 8 args))
+	 (string-to-number (match-string 9 args))
 	 (concat (match-string 7 args)
 		 (if (not (string= (match-string 6 args) "0"))
 		     (concat " " (match-string 6 args)) "")
@@ -1115,17 +1046,19 @@ This function should be put on `comint-preoutput-filter-functions'."
        nil (format "match %s\n"
 		   (read-string (chess-string 'challenge-whom)))))
 
-     ;; this handler is taken from chess-common; we need to send long
-     ;; algebraic notation to the ICS server, not short
+     ;; we need to send long algebraic notation to the ICS server, not short
      ((eq event 'move)
-      (chess-ics-send
-       (if (chess-ply-any-keyword (car args) :castle :long-castle)
-	   (chess-ply-to-algebraic (car args))
-	 (concat (chess-index-to-coord
-		  (chess-ply-source (car args))) "-"
-		  (chess-index-to-coord
-		   (chess-ply-target (car args)))))
-       (chess-game-data game 'ics-buffer))
+      (let ((ply (car args)))
+	(chess-ics-send
+	 (if (chess-ply-any-keyword ply :castle :long-castle)
+	     (chess-ply-to-algebraic ply)
+	   (concat (chess-index-to-coord (chess-ply-source ply))
+		   "-"
+		   (chess-index-to-coord (chess-ply-target ply))
+		   (if (characterp (chess-ply-keyword ply :promote))
+		       (format "=%c" (chess-ply-keyword ply :promote))
+		     "")))
+	 (chess-game-data game 'ics-buffer)))
       (if (chess-game-over-p game)
 	  (chess-game-set-data game 'active nil)))
 
@@ -1152,7 +1085,7 @@ This function should be put on `comint-preoutput-filter-functions'."
       (chess-ics-send "resign" (chess-game-data game 'ics-buffer)))
 
      (t
-      (apply 'chess-network-handler game event args)))))
+      (apply #'chess-network-handler game event args)))))
 
 (provide 'chess-ics)
 

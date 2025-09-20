@@ -1,10 +1,34 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; A game database that stores PGN format games or EPD format positions in
-;; a single file.
+;;; chess-file.el --- Handle chess databases stored in PGN or EPD files  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: files, games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; A game database that stores PGN or EPD format positions in a single file.
 ;;
 ;; This is basically what you expect from a file ending in .pgn or .epd.
-;;
+
+;;; Code:
+
+(require 'chess-fen)
+(require 'chess-pgn)
 
 (defvar chess-file-locations nil
   "A list of starting positions of individual records of this collection.")
@@ -81,8 +105,8 @@ inbetween of individual records.")
    ((eq event 'write)
     (goto-char (point-max))
     (while (memq (char-before) '(?  ?\t ?\n ?\r))
-      (delete-backward-char 1))
-    (apply 'insert (nth 4 (assq chess-file-type chess-file-types)))
+      (delete-char -1))
+    (apply #'insert (nth 4 (assq chess-file-type chess-file-types)))
     (push (point) chess-file-locations)
     (funcall (nth 3 (assq chess-file-type chess-file-types)) (car args))
     (1- (chess-file-handler 'count)))

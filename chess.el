@@ -1,56 +1,69 @@
-;;; chess.el --- Play chess in Emacs
+;;; chess.el --- Play chess in GNU Emacs  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2001 John Wiegley <johnw@gnu.org>
+;; Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
-;; Emacs Lisp Archive Entry
-;; Filename: chess.el
-;; Version: 2.0
-;; Keywords: games
 ;; Author: John Wiegley <johnw@gnu.org>
 ;; Maintainer: Mario Lang <mlang@delysid.org>
-;; Description: Play chess in Emacs
-;; URL: http://emacs-chess.sourceforge.net/
-;; Compatibility: Emacs21
+;; Version: 2.0.5
+;; Package-Requires: ((cl-lib "0.5"))
+;; Keywords: games
+;; Compatibility: Emacs24
 
-;; This file is not part of GNU Emacs.
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
 
-;; This is free software; you can redistribute it and/or modify it under
-;; the terms of the GNU General Public License as published by the Free
-;; Software Foundation; either version 2, or (at your option) any later
-;; version.
-;;
-;; This is distributed in the hope that it will be useful, but WITHOUT
-;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-;; for more details.
-;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs; see the file COPYING.  If not, write to the
-;; Free Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-;; MA 02111-1307, USA.
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;; Welcome to Emacs Chess, a chess playing module for GNU Emacs.
 ;;
-;; This program will not play chess against you; it is not a chess
-;; computer.  It can use a chess computer, however, to simulate your
-;; opponent's moves.  This is decided when you choose your opponent.
-;; You must, of course, have that chess computer installed.  See the
-;; top of chess-player.el for more information.
+;; chess.el is an Emacs Lisp library and several clients on top of the
+;; underlying library functionality for performing various activities
+;; related to the game of chess.
 ;;
-;; To just get a chessboard up, put the following in your .emacs file:
+;; Type `M-x chess', and play chess against one of the default engine modules.
 ;;
-;;   (add-to-list 'load-path "<the path to Emacs Chess>")
+;; Type `C-u M-x chess' to select a specific engine.
+;; You can play against various external chess computer programs, like
+;; crafty, fruit, glaurung, gnuchess, phalanx, sjeng and stockfish.
+;; There is also an Emacs based chess computer module (ai) which does not
+;; require any external programs.  However, the internal AI is not very strong.
 ;;
-;;   (autoload 'chess "chess" "Play a game of chess" t)
+;; To play against another human on a different machine running GNU Emacs,
+;; type `C-u M-x chess RET network RET'.
+;; To play on one of the internet chess servers, type `M-x chess-ics'.
 ;;
-;; Now you can type `M-x chess', and play chess against anyone else in
-;; the room with you, without having to install anything more.
+;; If you'd like to view or edit Portable Game Notation (PGN) files,
+;; `chess-pgn-mode' provides a text-mode derived mode which can display the
+;; chess position at point.
+;;
+;; To improve your chessaility, `M-x chess-tutorial' provides a simple knight
+;; movement exercise to get you started, and `M-x chess-puzzle' can be used
+;; to solve puzzle collections in EPD or PGN format.
+;;
+;; There are some different types of chessboard display modules available.
+;; * A simple character based display (chess-plain).
+;; * A more verbose ASCII chessboard (chess-ics1).
+;; * A graphical chessboard display which uses images (chess-images).
+;;
+;; The variable `chess-default-display' controls which display modules
+;; are tried when a chessboard should be displayed.  By default, chess-images
+;; is tried first.  If Emacs is not running in a graphical environment,
+;; chess-ics1 is used instead.  To enable the chess-plain display module,
+;; customize `chess-default-display' accordingly.
 ;;
 ;; Once this is working, the next thing to do is to customize
-;; `chess-use-modules'.  This is a list of functionality modules used
-;; by chess.el to provide its functionality.  You can enable or
+;; `chess-default-modules'.  This is a list of functionality modules used
+;; by chess.el to provide additional functionality.  You can enable or
 ;; disable modules so that Emacs Chess better suites your tastes.
 ;; Those modules in turn often have configuration variables, and
 ;; appropriate documentation at the top of the related file.
@@ -61,13 +74,7 @@
 ;; displays, opponents, analysis programs, etc.  See the documentation
 ;; in chess-module.el to learn more.
 ;;
-;; There is no documentation for this program other than what exists
-;; in the source files.  This is because the source files aim at being
-;; self documenting, and as chess is such a simple game, most chess
-;; players aren't going to need to know much about this program in
-;; particular.
-;;
-;; However, most people will probably be interested in reading the top
+;; Most people will probably also be interested in reading the top
 ;; of chess-display.el and chess-pgn.el, which describe the user
 ;; interface commands available in each of those buffer types.
 
@@ -79,9 +86,10 @@
 
 (defgroup chess nil
   "An Emacs chess playing program."
-  :group 'games)
+  :group 'games
+  :link '(custom-manual "(chess)Top"))
 
-(defconst chess-version "2.0b6"
+(defconst chess-version "2.0.4"
   "The version of the Emacs chess program.")
 
 (defcustom chess-default-display
@@ -89,12 +97,11 @@
   "Default display to be used when starting a chess session.
 A list indicates a series of alternatives if the first display is
 not available."
-  :type '(choice symbol (repeat symbol))
-  :group 'chess)
+  :type '(choice symbol (repeat symbol)))
 
 (defcustom chess-default-modules
   '((chess-sound chess-announce)
-    chess-autosave
+    ;;chess-autosave ml (2014-06-06): module not fully working
     chess-clock
     ;;chess-kibitz   jww (2002-04-30): not fully supported yet
     ;;chess-chat
@@ -103,21 +110,26 @@ not available."
 A sublist indicates a series of alternatives, if the first is not
 available.
 These can do just about anything."
-  :type '(repeat (choice symbol (repeat symbol)))
-  :group 'chess)
+  :type '(repeat (choice symbol (repeat symbol))))
 
 (defcustom chess-default-engine
-  '(chess-crafty chess-gnuchess chess-phalanx chess-ai)
+  '(chess-crafty
+    chess-stockfish chess-glaurung chess-fruit
+    chess-gnuchess chess-phalanx
+    chess-ai)
   "Default engine to be used when starting a chess session.
 A list indicates a series of alternatives if the first engine is not
 available."
-  :type '(choice symbol (repeat symbol))
-  :group 'chess)
+  :type '(choice symbol (repeat symbol)))
 
 (defcustom chess-full-name (user-full-name)
   "The full name to use when playing chess."
-  :type 'string
-  :group 'chess)
+  :type 'string)
+
+(and (fboundp 'font-lock-add-keywords)
+     (font-lock-add-keywords
+      'emacs-lisp-mode
+      '(("(\\(chess-error\\)\\>"	       1 font-lock-warning-face))))
 
 (defun chess--create-display (module game my-color disable-popup)
   (let ((display (chess-display-create game module my-color)))
@@ -128,7 +140,7 @@ available."
       display)))
 
 (defun chess--create-engine (module game response-handler ctor-args)
-  (let ((engine (apply 'chess-engine-create module game
+  (let ((engine (apply #'chess-engine-create module game
 		       response-handler ctor-args)))
     (when engine
       ;; for the sake of engines which are ready to play now, and
@@ -150,7 +162,9 @@ If an element of MODULE-LIST is a sublist, treat it as alternatives."
 	  ;; this module is actually a list, which means keep trying
 	  ;; until we find one that works
 	  (while module
-	    (if (setq object (apply create-func (car module) args))
+	    (if (setq object (condition-case nil
+				 (apply create-func (car module) args)
+			       (error nil)))
 		(progn
 		  (push object objects)
 		  (setq module nil))
@@ -158,12 +172,15 @@ If an element of MODULE-LIST is a sublist, treat it as alternatives."
     (nreverse objects)))
 
 (chess-message-catalog 'english
-  '((no-engines-found . "Could not find any chess engines to play against; install gnuchess!")))
+  '((no-engines-found
+     . "Could not find any chess engines to play against; install gnuchess!")))
 
 ;;;###autoload
 (defun chess (&optional engine disable-popup engine-response-handler
 			&rest engine-ctor-args)
-  "Start a game of chess, playing against ENGINE (a module name)."
+  "Start a game of chess, playing against ENGINE (a module name).
+With prefix argument, prompt for the engine to play against.
+Otherwise use `chess-default-engine' to determine the engine."
   (interactive
    (list
     (if current-prefix-arg
@@ -186,7 +203,7 @@ If an element of MODULE-LIST is a sublist, treat it as alternatives."
 					'chess--create-display
 					game my-color disable-popup))
     (when (car objects)
-      (mapc 'chess-display-update objects)
+      (mapc #'chess-display-update objects)
       (chess-module-set-leader (car objects))
       (unless disable-popup
 	(chess-display-popup (car objects))))
@@ -200,8 +217,8 @@ If an element of MODULE-LIST is a sublist, treat it as alternatives."
 					   'chess--create-engine game
 					   engine-response-handler
 					   engine-ctor-args)
-		   ;(error nil))
-		     ))
+		   ;  (error nil))
+	    ))
 	  objects)
 
     (unless (car objects)
@@ -211,6 +228,9 @@ If an element of MODULE-LIST is a sublist, treat it as alternatives."
 
 ;;;###autoload
 (defalias 'chess-session 'chess)
+
+;;;###autoload
+(define-key menu-bar-games-menu [chess] '(menu-item "Chess" chess :help "Play Chess"))
 
 ;;;###autoload
 (defun chess-create-display (perspective &optional modules-too)

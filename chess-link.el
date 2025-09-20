@@ -1,10 +1,28 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; chess-link.el --- Connect two engines  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
+
+;; This is free software; you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
 ;;
+;; This is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+;; for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
 ;; A module for connecting two engines.  If one is a protocol
 ;; transport (like chess-network), and the other is a computing engine
 ;; (like chess-gnuchess), this will allow you to expose a bot over the
 ;; channel.
-;;
+
+;;; Code:
 
 (require 'chess)
 (require 'chess-engine)
@@ -24,13 +42,14 @@
      (t
       (let ((chess-engine-inhibit-auto-pass t))
 	(setq return-value
-	      (apply 'chess-engine-default-handler event args)))
+	      (apply #'chess-engine-default-handler event args)))
 
       ;; but now transfer the event to the other engine
-      (apply 'chess-engine-command
+      (apply #'chess-engine-command
 	     (if (eq (current-buffer) first-engine)
 		 second-engine
-	       first-engine) event args)
+	       first-engine)
+	     event args)
 
       return-value))))
 

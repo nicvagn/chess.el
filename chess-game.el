@@ -1,15 +1,33 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Maintain a chess game that is being played or viewed
-;;
+;;; chess-game.el --- Maintain a chess game that is being played or viewed  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;; A chess game is represented by a set of tags that describe the
 ;; game, and a list of plies representing the main variation.
 
+;;; Code:
+
+(eval-when-compile (require 'cl-lib))
 (require 'chess-ply)
-(require 'chess-pgn)
 
 (defvar chess-game-inhibit-events nil)
 
@@ -23,20 +41,20 @@
     ("TimeControl" . "-")))
 
 (defsubst chess-game-hooks (game)
-  "Return the tags alist associated with GAME."
-  (assert game)
+  "Return the event hooks associated with GAME."
+  (cl-assert game)
   (car game))
 
 (defsubst chess-game-set-hooks (game hooks)
-  "Return the tags alist associated with GAME."
-  (assert game)
-  (assert (or hooks (eq hooks nil)))
+  "Set the event hooks associated with GAME."
+  (cl-assert game)
+  (cl-assert (or hooks (eq hooks nil)))
   (setcar game hooks))
 
 (defun chess-game-add-hook (game function &optional data prepend)
   "Add to GAME an event hook FUNCTION."
-  (assert game)
-  (assert function)
+  (cl-assert game)
+  (cl-assert function)
   (let ((hooks (chess-game-hooks game)))
     (if (null hooks)
 	(chess-game-set-hooks game (list (cons function data)))
@@ -48,8 +66,8 @@
   "Remove from GAME all event hooks that match FUNCTION.
 If DATA is specified, only remove those hooks whose associated data
 matches."
-  (assert game)
-  (assert function)
+  (cl-assert game)
+  (cl-assert function)
   (let* ((hooks (chess-game-hooks game))
 	 (h hooks) last-hook)
     (while h
@@ -65,7 +83,7 @@ matches."
 
 (defsubst chess-game-run-hooks (game &rest args)
   "Run the event hooks of GAME and pass ARGS."
-  (assert game)
+  (cl-assert game)
   (unless chess-game-inhibit-events
     (let (result)
       (dolist (hook (chess-game-hooks game) result)
@@ -73,29 +91,29 @@ matches."
 
 (defsubst chess-game-tags (game)
   "Return the tags alist associated with GAME."
-  (assert game)
+  (cl-assert game)
   (cadr game))
 
 (defsubst chess-game-set-tags (game tags)
   "Set the tags alist associated with GAME.
 After the TAGS alist was set the 'set-tags event is triggered."
-  (assert game)
-  (assert (or tags (eq tags nil)))
+  (cl-assert game)
+  (cl-assert (or tags (eq tags nil)))
   (setcar (cdr game) tags)
   (chess-game-run-hooks game 'set-tags))
 
 (defsubst chess-game-tag (game tag)
   "Return the value for TAG in GAME."
-  (assert game)
-  (assert tag)
+  (cl-assert game)
+  (cl-assert tag)
   (let ((tags (chess-game-tags game)))
     (and tags (cdr (assoc tag tags)))))
 
 (defun chess-game-set-tag (game tag value)
-  "Set a TAG for GAME to VALUE."
-  (assert game)
-  (assert tag)
-  (assert value)
+  "Set TAG for GAME to VALUE."
+  (cl-assert game)
+  (cl-assert tag)
+  (cl-assert value)
   (let ((tags (chess-game-tags game)))
     (if (null tags)
 	(chess-game-set-tags game (list (cons tag value)))
@@ -106,27 +124,27 @@ After the TAGS alist was set the 'set-tags event is triggered."
   (chess-game-run-hooks game 'set-tag tag))
 
 (defsubst chess-game-del-tag (game tag)
-  "Delete a TAG from GAME."
-  (assert game)
-  (assert tag)
+  "Delete TAG from GAME."
+  (cl-assert game)
+  (cl-assert tag)
   (chess-game-set-tags game (assq-delete-all tag (chess-game-tags game)))
   (chess-game-run-hooks game 'delete-tag tag))
 
 
 (defsubst chess-game-data-alist (game)
   "Return the data alist associated with GAME."
-  (assert game)
+  (cl-assert game)
   (nth 2 game))
 
 (defsubst chess-game-set-data-alist (game value)
   "Set the data alist associated with GAME."
-  (assert game)
+  (cl-assert game)
   (setcar (nthcdr 2 game) value))
 
 (defun chess-game-set-data (game key value)
   "Set GAME data KEY to VALUE."
-  (assert game)
-  (assert (symbolp key))
+  (cl-assert game)
+  (cl-check-type key symbol)
   (let* ((alist (chess-game-data-alist game))
 	 (cell (assq key alist)))
     (if cell
@@ -140,16 +158,16 @@ After the TAGS alist was set the 'set-tags event is triggered."
 
 (defun chess-game-data (game key)
   "Return the value of GAME data KEY."
-  (assert game)
-  (assert (symbolp key))
+  (cl-assert game)
+  (cl-check-type key symbol)
   (let ((alist (chess-game-data-alist game)))
     (if alist
 	(cdr (assq key alist)))))
 
 (defun chess-game-del-data (game key)
   "Delete KEY from GAME's data alist."
-  (assert game)
-  (assert (symbolp key))
+  (cl-assert game)
+  (cl-check-type key symbol)
   (let ((alist (chess-game-data-alist game)))
     (if alist
 	(assq-delete-all key alist))))
@@ -157,63 +175,63 @@ After the TAGS alist was set the 'set-tags event is triggered."
 
 (defsubst chess-game-plies (game)
   "Return the main variation of GAME as a list of plies."
-  (assert game)
+  (cl-assert game)
   (nth 3 game))
 
 (defalias 'chess-game-main-var 'chess-game-plies)
 
 (defsubst chess-game-set-plies (game plies)
   "Set the list of plies which represents the main variation of GAME."
-  (assert game)
+  (cl-assert game)
   (setcdr (nthcdr 2 game) (if plies (list plies) nil))
   (chess-game-run-hooks game 'setup-game game))
 
 (defsubst chess-game-set-start-position (game position)
   "Set the initial POSITION of GAME."
-  (assert game)
-  (assert (vectorp position))
+  (cl-assert game)
+  (cl-assert (vectorp position))
   (chess-game-set-plies game (list (chess-ply-create* position))))
 
 (defsubst chess-game-pos (game &optional index)
   "Return the current position of GAME or a position of a given INDEX."
-  (assert game)
+  (cl-assert game)
   (chess-ply-pos (chess-game-ply game index)))
 
 (defun chess-game-status (game &optional index)
   "Return a symbol, such as :checkmate, :resign, etc.
 This conveys the status of the game at the given INDEX."
-  (assert game)
+  (cl-assert game)
   (or (chess-pos-status (chess-game-pos game index))
       (chess-ply-final-p (chess-game-ply game index))))
 
 (defsubst chess-game-index (game)
   "Return the GAME's current position index."
-  (assert game)
+  (cl-assert game)
   (1- (length (chess-game-plies game))))
 
 (defsubst chess-game-seq (game)
   "Return the current GAME sequence."
-  (assert game)
+  (cl-assert game)
   (/ (+ 2 (chess-game-index game)) 2))
 
 (defsubst chess-game-side-to-move (game &optional index)
   "Return the color whose move it is in GAME at INDEX (or at the last position
 if INDEX is nil)."
-  (assert game)
+  (cl-assert game)
   (chess-pos-side-to-move (chess-game-pos game index)))
 
 (defun chess-game-ply (game &optional index)
   "Return a ply of GAME.
-If INDEX is non-nil, the last played ply is returned."
-  (assert game)
+If INDEX is nil, the last played ply is returned."
+  (cl-assert game)
   (if index
       (nth index (chess-game-plies game))
     (car (last (chess-game-plies game)))))
 
 (defun chess-game-add-ply (game ply)
-  "Return the position related to GAME's INDEX position."
-  (assert game)
-  (assert (listp ply))
+  "Add PLY to the main variation of GAME."
+  (cl-assert game)
+  (cl-check-type ply list)
   (let ((plies (chess-game-plies game)))
     (if plies
 	(nconc plies (list ply))
@@ -226,45 +244,31 @@ If INDEX is non-nil, the last played ply is returned."
 
 (defun chess-game-undo (game count)
   "Undo the last COUNT plies of GAME."
-  (assert game)
-  (assert (integerp count))
-  (assert (> count 0))
+  (cl-assert game)
+  (cl-check-type count (integer 0))
   (if (> count (chess-game-index game))
       (chess-error 'undo-limit-reached))
   (let ((chess-game-inhibit-events t))
     (chess-game-set-plies game (nbutlast (chess-game-plies game) count)))
   (chess-game-run-hooks game 'post-undo count))
 
-
 (defun chess-game-strip-annotations (game)
   "Strip all annotations from the given GAME."
-  (assert game)
+  (cl-assert game)
   (dotimes (i (chess-game-index game))
     (let ((position (chess-game-pos game i)))
       (chess-pos-set-annotations position nil))))
 
-
 (defsubst chess-game-over-p (game)
   "Return non-nil if GAME is at a final positionn."
-  (assert game)
+  (cl-assert game)
   (let ((last-ply (car (last (nth 3 game) 2))))
     (and last-ply (chess-ply-final-p last-ply))))
 
 
-(defsubst chess-game-to-string (game &optional indented)
-  "Convert GAME to a string in PGN format."
-  (assert game)
-  (chess-game-to-pgn game indented t))
-
-(defsubst chess-game-from-string (pgn)
-  "Convert a PGN format string to a chess game object."
-  (assert (stringp pgn))
-  (chess-pgn-to-game pgn))
-
-
 (defsubst chess-game-copy-game (game new-game)
-  (assert game)
-  (assert new-game)
+  (cl-assert game)
+  (cl-assert new-game)
   (chess-game-set-tags game (chess-game-tags new-game))
   (chess-game-set-plies game (chess-game-plies new-game)))
 
@@ -288,15 +292,16 @@ later using the various tag-related methods)."
 This creates a new position and adds it to the main variation.
 The 'changes' of the last ply reflect whether the game is currently in
 progress (nil), if it is drawn, resigned, mate, etc."
-  (assert game)
-  (assert (listp ply))
+  (cl-assert game)
+  (cl-assert (listp ply))
   (let ((current-ply (chess-game-ply game))
-	(position (chess-ply-pos ply))
 	(changes (chess-ply-changes ply)))
 
-    (assert current-ply)
-    (assert (and position (eq position (chess-ply-pos current-ply))))
-    (assert changes)
+    (cl-assert current-ply)
+    (cl-assert
+     (let ((position (chess-ply-pos ply)))
+       (and position (eq position (chess-ply-pos current-ply)))))
+    (cl-assert changes)
 
     (if (chess-ply-final-p current-ply)
 	(chess-error 'add-to-completed))
@@ -320,8 +325,7 @@ progress (nil), if it is drawn, resigned, mate, etc."
 
     (if (chess-ply-keyword ply :resign)
 	(chess-game-run-hooks game 'resign)
-      (chess-game-run-hooks game 'move current-ply)
-      (chess-game-run-hooks game 'post-move))))
+      (chess-game-run-hooks game 'move current-ply))))
 
 (defsubst chess-game-end (game keyword)
   "End GAME, by resignation, draw, etc."

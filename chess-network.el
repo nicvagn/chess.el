@@ -1,9 +1,29 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Play against an opponent over the network
-;;
+;;; chess-network.el --- Play against an opponent over the network  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Code:
 
 (require 'chess-common)
+(require 'chess-fen)
+(require 'chess-pgn)
 
 (defvar chess-network-regexp-alist
   (list
@@ -52,7 +72,7 @@
 	 (function
 	  (lambda ()
 	    (funcall chess-engine-response-handler 'undo
-		     (string-to-int (match-string 1))))))
+		     (string-to-number (match-string 1))))))
    (cons "accept\\(\\s-+\\(.+\\)\\)?$"
 	 (function
 	  (lambda ()
@@ -107,23 +127,26 @@
 (defvar chess-network-kind)
 (make-variable-buffer-local 'chess-network-kind)
 
+(defvar chess-full-name)
+
 (defun chess-network-handler (game event &rest args)
   "Initialize the network chess engine."
   (unless chess-engine-handling-event
     (cond
      ((eq event 'initialize)
-      (let ((which (read-char "Are you the c)lient or s)erver? "))
-	    proc)
+      (let* ((cursor-in-echo-area t)
+	     (which (read-char "Are you the c)lient or s)erver? "))
+	     proc)
 	(chess-message 'network-starting)
 	(setq proc
 	      (if (eq which ?s)
 		  (if (fboundp 'open-network-stream-server)
 		      (open-network-stream-server "*chess-network*"
 						  (current-buffer)
-						  (string-to-int
+						  (string-to-number
 						   (read-string "Port: ")))
 		    (start-process "*chess-network*"
-				   (current-buffer) "/usr/bin/nc"
+				   (current-buffer) (executable-find "nc")
 				   "-l" "-p" (read-string "Port: ")))
 		(open-network-stream "*chess-network*" (current-buffer)
 				     (read-string "Host: ")
@@ -140,12 +163,12 @@
 
      ((eq event 'setup-pos)
       (chess-engine-send nil (format "fen %s\n"
-				     (chess-pos-to-string (car args)))))
+				     (chess-pos-to-fen (car args)))))
 
      ((eq event 'setup-game)
       (chess-engine-send nil (format "pgn %s\n"
 				     (chess-network-flatten-multiline
-				      (chess-game-to-string (car args))))))
+				      (chess-game-to-pgn (car args) nil t)))))
 
      ((eq event 'pass)
       (chess-engine-send nil "pass\n"))
@@ -213,7 +236,7 @@
       (chess-common-handler game 'flag-fell))
 
      (t
-      (apply 'chess-common-handler game event args)))))
+      (apply #'chess-common-handler game event args)))))
 
 (provide 'chess-network)
 

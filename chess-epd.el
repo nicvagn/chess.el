@@ -1,24 +1,21 @@
-;;; chess-epd.el --- Extended Position Description Format
+;;; chess-epd.el --- Extended Position Description Format  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004  Free Software Foundation, Inc.
+;; Copyright (C) 2004-2020  Free Software Foundation, Inc.
 
 ;; Author: Mario Lang <mlang@delysid.org>
 
-;; This file is free software; you can redistribute it and/or modify
+;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation; either version 2, or (at your option)
-;; any later version.
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
 
-;; This file is distributed in the hope that it will be useful,
+;; This program is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs; see the file COPYING.  If not, write to
-;; the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-;; Boston, MA 02111-1307, USA.
-
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -36,7 +33,9 @@
 
 ;;; Code:
 
+(require 'chess-algebraic)
 (require 'chess-fen)
+(require 'chess-game)
 (require 'chess-ply)
 (require 'chess-pos)
 (require 'chess-var)
@@ -46,11 +45,11 @@
 	(value (cdr annotation)))
     (cond
      ((or (eq opcode 'am) (eq opcode 'bm))
-      (assert (consp value))
+      (cl-assert (consp value))
       (format "%S %s;"
-	      opcode (mapconcat #'chess-ply-to-string value " ")))
+	      opcode (mapconcat #'chess-ply-to-algebraic value " ")))
      ((eq opcode 'ce)
-      (assert (integerp value))
+      (cl-assert (integerp value))
       (format "%S %d;" opcode value))
      ((or (eq opcode 'pv) (eq opcode 'sv))
       (format "%S %s;"
@@ -61,7 +60,7 @@
 (defun chess-pos-to-epd (position)
   "Convert a chess POSITION to a string representation in extended
 position description format."
-  (assert position)
+  (cl-assert position)
   (concat (chess-pos-to-fen position)
 	  (when (consp (chess-pos-annotations position))
 	    (concat " "
@@ -83,7 +82,7 @@ and advance point after the correctly parsed position."
   "Return a list of positions contained in FILE."
   (let ((positions (list t)) pos)
     (with-temp-buffer
-      (insert-file-literally file)
+      (insert-file-contents file)
       (goto-char (point-min))
       (while (setq pos (chess-epd-parse))
 	(nconc positions (list pos))))
@@ -118,16 +117,16 @@ and advance point after the correctly parsed position."
 		       (cond
 			((or (eq opcode 'am) (eq opcode 'bm))
 			 (mapcar (lambda (move)
-				   (chess-ply-from-string pos move))
+				   (chess-algebraic-to-ply pos move))
 				 (split-string val " ")))
 			((eq opcode 'ce)
 			 (read val))
 			((or (eq opcode 'pm) (eq opcode 'sm)) ;predicted/supplied move
-			 (chess-ply-from-string pos val))
+			 (chess-algebraic-to-ply pos val))
 			((or (eq opcode 'pv) (eq opcode 'sv)) ; predicted/supplied variation
 			 (let ((var (chess-var-create pos)))
 			   (mapc (lambda (ply)
-				   (let ((changes (chess-ply-from-string
+				   (let ((changes (chess-algebraic-to-ply
 						   (chess-var-pos var) ply)))
 				     (if changes
 					 (chess-var-move var changes)

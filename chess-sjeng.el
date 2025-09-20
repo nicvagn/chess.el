@@ -1,38 +1,39 @@
-;;; chess-sjeng.el --- Play against sjeng!
+;;; chess-sjeng.el --- Play against sjeng!  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004  Free Software Foundation, Inc.
+;; Copyright (C) 2004-2020  Free Software Foundation, Inc.
 
 ;; Author: Mario Lang <mlang@delysid.org>
-;; Keywords: games
+;; Keywords: games, processes
 
-;; This file is free software; you can redistribute it and/or modify
+;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation; either version 2, or (at your option)
-;; any later version.
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
 
-;; This file is distributed in the hope that it will be useful,
+;; This program is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs; see the file COPYING.  If not, write to
-;; the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-;; Boston, MA 02111-1307, USA.
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Code:
 
+(require 'chess)                        ;For `chess-full-name'
 (require 'chess-common)
+(require 'chess-fen)
+(require 'chess-pgn)
 
 (defgroup chess-sjeng nil
   "The publically available chess engine 'sjeng'."
   :group 'chess-engine
+  :link '(custom-manual "(chess)Sjeng")
   :link '(url-link "http://sjeng.sourceforge.net"))
 
 (defcustom chess-sjeng-path (executable-find "sjeng")
-  "*The path to the sjeng executable."
-  :type 'file
-  :group 'chess-sjeng)
+  "The path to the sjeng executable."
+  :type 'file)
 
 (defvar chess-sjeng-evaluation nil)
 
@@ -75,7 +76,7 @@
 
      ((eq event 'setup-pos)
       (chess-engine-send nil (format "setboard %s\n"
-				     (chess-pos-to-string (car args)))))
+				     (chess-pos-to-fen (car args)))))
 
      ((eq event 'move)
       (when (= 1 (chess-game-index game))
@@ -95,7 +96,7 @@
 
      ((eq event 'setup-game)
       (let ((file (chess-with-temp-file
-		      (insert (chess-game-to-string (car args)) ?\n))))
+		      (chess-insert-pgn (car args)) (insert ?\n))))
 	(chess-engine-send nil (format "read %s\n" file))))
 
      ((eq event 'set-option)
@@ -114,7 +115,7 @@
 	       (= 1 (mod (car args) 2)))
 	  (error "Cannot undo until after sjeng moves"))
 
-      (apply 'chess-common-handler game event args)))))
+      (apply #'chess-common-handler game event args)))))
 
 (provide 'chess-sjeng)
 

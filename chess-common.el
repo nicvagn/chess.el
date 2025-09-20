@@ -1,10 +1,35 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
+;;; chess-common.el --- Handler functions common to xboard based engine protocols  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
 ;; Define handler functions that are common to the (relatively)
 ;; standard chess engine communication protocol:
 ;;
 ;;   http://www.tim-mann.org/xboard/engine-intf.html
 ;;
+;; See chess-uci.el for code shared by engines based on the
+;; Universal Chess Interface instead.
+
+;;; Code:
 
 (require 'chess-engine)
 (require 'chess-message)
@@ -15,13 +40,12 @@
 (make-variable-buffer-local 'chess-common-temp-files)
 
 (defmacro chess-with-temp-file (&rest body)
+  (declare (indent 1) (debug t))
   `(let ((file (make-temp-file "chess")))
      (with-temp-file file
        ,@body)
      (push file chess-common-temp-files)
      file))
-
-(put 'chess-with-temp-file 'lisp-indent-function 1)
 
 (chess-message-catalog 'english
   '((starting-engine	   . "Starting chess program '%s'...")
@@ -31,6 +55,8 @@
     (illegal-move          . "Illegal move")
     (not-yet-implemented   . "This feature is not yet implemented")))
 
+(defvar chess-full-name)
+
 (defun chess-common-handler (game event &rest args)
   "Initialize the network chess engine."
   (cond
@@ -39,7 +65,7 @@
 	   (path (intern (concat "chess-" name "-path")))
 	   proc)
       (chess-message 'starting-engine name)
-      (unless (boundp path)
+      (unless (and (boundp path) (symbol-value path))
 	(chess-error 'could-not-find-engine name path))
       (setq proc (start-process (concat "chess-" name)
 				(current-buffer) (symbol-value path)))
@@ -79,7 +105,7 @@
     (chess-error 'not-yet-implemented))
 
    ((eq event 'undo)
-    (dotimes (i (car args))
+    (dotimes (_ (car args))
       (chess-engine-send nil "undo\n"))
     (if (= 1 (mod (car args) 2))
 	(chess-engine-send nil "go\n"))

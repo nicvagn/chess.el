@@ -1,10 +1,41 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; A game database that uses SCID for storage/retrieval
-;;
-;; The advantage is that it's much faster than PGN, and far, far more
+;;; chess-scid.el --- A game database that uses SCID for storage/retrieval  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games, processes
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; The advantage of SCID is that it's much faster than PGN, and far, far more
 ;; compact.
 ;;
+;; SCID offers a Tcl-based command-line interface, tcscid, which is what
+;; this module uses to query SCID databases.
+
+;;; Code:
+
+(require 'chess-game)
+(require 'chess-message)
+(require 'chess-pgn)
+
+(chess-message-catalog 'english
+  '((failed-load     . "Failed to load game %d from ChessDB")
+    (failed-find-end . "Failed to locate end of game %d in ChessDB")))
 
 (defvar chess-scid-process)
 
@@ -14,35 +45,47 @@
   (process-send-string chess-scid-process (concat string "\n")))
 
 (defun chess-scid-get-result (command)
-  (let ((here (point-max)))
+  (let ((here (point-max)) (iterations 10))
     (chess-scid-send command)
     (accept-process-output chess-scid-process)
+    (while (and (> (setq iterations (1- iterations)) 0)
+		(eobp))
+      (accept-process-output chess-scid-process 1 0 t))
+    (if (= here (point-max))
+	(error "chess-scid: '%s' failed to produce any output" command))
     (goto-char (point-max))
-    (while (memq (char-before) '(?  ?\t ?\n ?\r ?\%))
-      (backward-char 1))
-    (buffer-substring here (point))))
+    (skip-chars-backward " \t\n\r%")
+    (prog1
+	(buffer-substring here (point))
+      (erase-buffer))))
 
 (defun chess-scid-handler (event &rest args)
   (cond
    ((eq event 'open)
-    (if (file-readable-p (concat (car args) ".sg3"))
-	(let* ((buffer (generate-new-buffer " *chess-scid*"))
-	       (proc (start-process "*chess-scid*" buffer
-				    (executable-find "tcscid"))))
-	  (if (and proc (eq (process-status proc) 'run))
-	      (with-current-buffer buffer
-		(accept-process-output proc)
-		(setq chess-scid-process proc)
-		(if (= 1 (string-to-int
-			  (chess-scid-get-result
-			   (format "sc_base open %s"
-				   (expand-file-name (car args))))))
-		    buffer
-		  (kill-process proc)
-		  (kill-buffer buffer)
-		  nil))
-	    (kill-buffer buffer)
-	    nil))))
+    (let* ((db-file (if (string-match "\\.sg3\\'" (car args))
+			(car args)
+		      (concat (car args) ".sg3")))
+	   (db-base (and (string-match "\\`\\(.+\\)\\.sg3\\'" db-file)
+			 (match-string 1 db-file))))
+      (if (and db-base (file-readable-p db-file))
+	  (let* ((buffer (generate-new-buffer " *chess-scid*"))
+		 (proc (start-process "*chess-scid*" buffer
+				      (or (executable-find "tcscid")
+					  (executable-find "tcchessdb")))))
+	    (if (and proc (eq (process-status proc) 'run))
+		(with-current-buffer buffer
+		  (accept-process-output proc)
+		  (setq chess-scid-process proc)
+		  (if (= 1 (string-to-number
+			    (chess-scid-get-result
+			     (format "sc_base open %s"
+				     (expand-file-name db-base)))))
+		      buffer
+		    (kill-process proc)
+		    (kill-buffer buffer)
+		    nil))
+	      (kill-buffer buffer)
+	      nil)))))
 
    ((eq event 'close)
     (chess-scid-send "sc_base close\nexit")
@@ -50,7 +93,7 @@
       (sit-for 0 250)))
 
    ((eq event 'read-only-p)
-    (if (zerop (string-to-int (chess-scid-get-result "sc_base isReadOnly")))
+    (if (zerop (string-to-number (chess-scid-get-result "sc_base isReadOnly")))
 	nil
       t))
 
@@ -58,20 +101,44 @@
     (chess-scid-get-result "sc_base filename"))
 
    ((eq event 'count)
-    (string-to-int (chess-scid-get-result "sc_base numGames")))
+    (string-to-number (chess-scid-get-result "sc_base numGames")))
 
    ((eq event 'read)
-    (let ((here (point-max)) game)
-      (process-send-string chess-scid-process
-			   (format "sc_game load %d\nsc_game pgn\n"
-				   (car args)))
+    ;; clear the buffer, since we don't need old data here any more, and it
+    ;; can accumulate without bound during running of the validation tests
+    (erase-buffer)
+    (process-send-string chess-scid-process
+			 (format "sc_game load %d\n" (1+ (car args))))
+    (accept-process-output chess-scid-process)
+    (let ((here (point-max))
+	  (iterations 10)
+	  found)
+      (process-send-string chess-scid-process "sc_game pgn\n")
       (accept-process-output chess-scid-process)
       (goto-char here)
-      (when (setq game (chess-pgn-to-game))
-	(chess-game-set-data game 'database (current-buffer))
-	(chess-game-set-data game 'database-index (car args))
-	(chess-game-set-data game 'database-count (chess-scid-handler 'count))
-	game)))
+      (while (and (> (setq iterations (1- iterations)) 0)
+		  (not (and (or (looking-at "\\[")
+				(and (search-forward "[" nil t)
+				     (goto-char (match-beginning 0))))
+			    (setq found t))))
+	(accept-process-output chess-scid-process 1 0 t))
+      (if (not found)
+	  (chess-error 'failed-load (1+ (car args)))
+	(setq iterations 10 found nil here (point))
+	(while (and (> (setq iterations (1- iterations)) 0)
+		    (not (and (re-search-forward "\\(\\*\\|1-0\\|0-1\\|1/2-1/2\\)" nil t)
+			      (goto-char (match-beginning 0))
+			      (setq found t))))
+	  (accept-process-output chess-scid-process 1 0 t))
+	(if (not found)
+	    (chess-error 'failed-find-end (1+ (car args)))
+	  (goto-char here)
+	  (let ((game (chess-pgn-to-game)))
+	    (when game
+	      (chess-game-set-data game 'database (current-buffer))
+	      (chess-game-set-data game 'database-index (car args))
+	      (chess-game-set-data game 'database-count (chess-scid-handler 'count))
+	      game))))))
 
    ((and (eq event 'query)
 	 (eq (car args) 'tree-search))
@@ -98,11 +165,11 @@
 			 "\\([0-9.]+\\)%")
 		 nil t)
 	      (let ((move (match-string 2))
-		    (freq (string-to-int (match-string 3)))
+		    (freq (string-to-number (match-string 3)))
 		    (score (string-to-number (match-string 5)))
-		    (avgelo (string-to-int (match-string 6)))
-		    (perf (string-to-int (match-string 7)))
-		    (avgyear (string-to-int (match-string 8)))
+		    (avgelo (string-to-number (match-string 6)))
+		    (perf (string-to-number (match-string 7)))
+		    (avgyear (string-to-number (match-string 8)))
 		    (draws (string-to-number (match-string 9))))
 		(nconc lines
 		       (list
@@ -125,7 +192,7 @@
 			   "\\([0-9.]+\\)%") nil t)
 	      (goto-char (point-max))
 	      (append
-	       (list (string-to-int (match-string 1))
+	       (list (string-to-number (match-string 1))
 		     (string-to-number (match-string 2))
 		     (string-to-number (match-string 6)))
 	       (cdr lines)))))
@@ -136,7 +203,7 @@
 
    ((eq event 'replace)
     (unless (chess-scid-handler 'read-only-p)
-      (let ((index (or (cadr args)
+      (let ((index (or (1+ (cadr args))
 		       (chess-game-data (car args) 'database-index))))
 	(chess-scid-send
 	 (format "sc_game import \"%s\""

@@ -1,37 +1,36 @@
-;;; chess-phalanx.el --- Play chess against phalanx!
+;;; chess-phalanx.el --- Play chess against phalanx!  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2002, 2004  Free Software Foundation, Inc.
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
 
 ;; Author: John Wiegley
 ;; Maintainer: Mario Lang <mlang@delysid.org>
 ;; Keywords: games, processes
 
-;; This file is free software; you can redistribute it and/or modify
+;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation; either version 2, or (at your option)
-;; any later version.
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
 
-;; This file is distributed in the hope that it will be useful,
+;; This program is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs; see the file COPYING.  If not, write to
-;; the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-;; Boston, MA 02111-1307, USA.
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Code:
 
 (require 'chess-common)
 
 (defgroup chess-phalanx nil
   "The publically available chess engine 'phalanx'."
   :group 'chess-engine
-  :link '(url-link "http://dusan.freeshell.org/phalanx/"))
+  :link '(url-link "http://phalanx.sourceforge.net/"))
 
 (defcustom chess-phalanx-path (executable-find "phalanx")
   "The path to the phalanx executable."
-  :type 'file
-  :group 'chess-phalanx)
+  :type 'file)
 
 (defvar chess-phalanx-regexp-alist
   (list
@@ -61,7 +60,7 @@
       (chess-game-set-data game 'active nil))
 
      (t
-      (apply 'chess-common-handler game event args)))))
+      (apply #'chess-common-handler game event args)))))
 
 (provide 'chess-phalanx)
 

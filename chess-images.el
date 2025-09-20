@@ -1,7 +1,22 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Chessboard display style using graphical images
-;;
+;;; chess-images.el --- Chessboard display style using graphical images  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -16,6 +31,8 @@
 ;; displayed immediately, allowing you to easily browse among
 ;; different piece sets if you have them (such as the ZIICS set, see
 ;; the xboard man page).
+
+;;; Code:
 
 (require 'chess-display)
 
@@ -37,8 +54,7 @@
 
 (defcustom chess-images-separate-frame (display-multi-frame-p)
   "If non-nil, display the chessboard in its own frame."
-  :type 'boolean
-  :group 'chess-images)
+  :type 'boolean)
 
 (defcustom chess-images-directory
   (if (file-directory-p "/usr/share/games/xboard/pixmaps")
@@ -66,8 +82,7 @@ for all squares.  If you want really custom pieces, you can use the
 symbolic colors dark_square, light_square and dark_piece and
 light_piece."
   :type 'directory
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-default-size nil
   "The default pixel width to use for chess pieces.
@@ -75,8 +90,7 @@ If this width is not available, then next smallest will be chosen.
 If there is none smaller, then the best size available will be chosen.
 If `chess-images-default-size' is nil (the default), then the best
 width for the current display is calculated used."
-  :type '(choice integer (const :tag "Best fit" nil))
-  :group 'chess-images)
+  :type '(choice integer (const :tag "Best fit" nil)))
 
 (defcustom chess-images-background-image "blank"
   "The name of the file used for background squares.
@@ -84,69 +98,59 @@ This file is optional.  If there is no file available by this name, a
 solid color square will be created and used.  This option exists so
 that specialized squares may be used such as marble tiles, etc."
   :type 'file
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-border-color (cdr (assq 'background-color
 						(frame-parameters)))
   "Color to use for the border around pieces."
   :type 'color
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-dark-color
   (if (display-color-p) "#77a26d" "gray60")
   "Color to use for \"dark\" background squares."
   :type 'color
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-light-color
   (if (display-color-p) "#c8c365" "gray80")
   "Color to use for \"light\" background squares."
   :type 'color
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-black-color
   (if (display-color-p) "#202020" "gray0")
   "Color to use for \"black\" pieces."
   :type 'color
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-white-color
   (if (display-color-p) "#ffffcc" "gray100")
   "Color to use for \"white\" pieces."
   :type 'color
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-highlight-color
   (if (display-color-p) "#add8e6" "gray90")
   "Color to use for highlighting pieces that have been selected."
   :type 'color
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-extension "xpm"
   "The file extension used for chess display bitmaps."
   :type 'file
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
 (defcustom chess-images-border-width 2
   "This defines the width of the border that surrounds each piece."
   :type '(choice integer (const :tag "No border" nil))
-  :set 'chess-images-clear-image-cache
-  :group 'chess-images)
+  :set #'chess-images-clear-image-cache)
 
-(defcustom chess-images-popup-function 'chess-images-popup
+(defcustom chess-images-popup-function #'chess-images-popup
   "The function used to popup a chess-images display.
 The current-buffer is set to the display buffer when this function is
 called."
-  :type 'function
-  :group 'chess-images)
+  :type 'function)
 
 ;;; Code:
 
@@ -175,13 +179,13 @@ called."
     (funcall chess-images-popup-function))
 
    ((eq event 'draw)
-    (apply 'chess-images-draw args))
+    (apply #'chess-images-draw args))
 
    ((eq event 'draw-square)
-    (apply 'chess-images-draw-square args))
+    (apply #'chess-images-draw-square args))
 
    ((eq event 'highlight)
-    (apply 'chess-images-highlight args))
+    (apply #'chess-images-highlight args))
 
    ((eq event 'start-edit)
     (setq cursor-type t))
@@ -195,16 +199,12 @@ called."
     (setq cursor-type nil
 	  chess-images-cache nil
 	  chess-images-size (chess-images-best-size
-			     (- (if display
-				    (x-display-pixel-height display)
-				  (display-pixel-height))
+			     (- (display-pixel-height display)
 				;; On Macs and Windows, account for
 				;; the Start/Status bar
 				(if (memq window-system '(mac windows w32))
 				    80 20))
-			     (- (if display
-				    (x-display-pixel-width display)
-				  (display-pixel-width)) 20)))))
+			     (- (display-pixel-width display) 20)))))
 
 (defun chess-images-initialize ()
   (let ((map (current-local-map)))
@@ -223,9 +223,7 @@ called."
       (let* ((size (float (+ (* (or chess-images-border-width 0) 8)
 			     (* chess-images-size 8))))
 	     (max-char-height (ceiling (/ size (frame-char-height))))
-	     (max-char-width  (ceiling (/ size (frame-char-width))))
-	     (display (and (stringp chess-images-separate-frame)
-			   chess-images-separate-frame)))
+	     (max-char-width  (ceiling (/ size (frame-char-width)))))
 	;; create the frame whenever necessary
 	(chess-display-popup-in-frame (+ max-char-height 2)
 				      max-char-width
@@ -294,8 +292,7 @@ chess board are light or dark depending on location."
 Common modes are:
   `selected'    show that the piece has been selected for movement.
   `unselected'  show that the piece has been unselected."
-  (let* ((inverted (not (chess-display-perspective nil)))
-	 (pos (chess-display-index-pos nil index))
+  (let* ((pos (chess-display-index-pos nil index))
 	 (highlight (copy-alist (get-text-property pos 'display))))
     (setcar (last highlight)
 	    (list (cons "light_square" (if (eq mode :selected)
@@ -364,13 +361,13 @@ They are returned in ascending order, or nil for no sizes available."
 	(with-temp-buffer
 	  (insert-file-contents-literally file)
 	  (re-search-forward "\"\\([0-9]+\\)")
-	  (setq chess-images-sizes (list (string-to-int (match-string 1)))))
+	  (setq chess-images-sizes (list (string-to-number (match-string 1)))))
       (let (sizes)
 	(dolist (file (directory-files chess-images-directory nil
 				       (format "rdd[0-9]+\\.%s"
 					       chess-images-extension)))
 	  (if (string-match "rdd\\([0-9]+\\)\\." file)
-	      (push (string-to-int (match-string 1 file)) sizes)))
+	      (push (string-to-number (match-string 1 file)) sizes)))
 	(setq chess-images-sizes (sort sizes '<))))))
 
 (defun chess-images-best-size (&optional height width)
@@ -409,9 +406,9 @@ They are returned in ascending order, or nil for no sizes available."
     (insert "\"  c red s void\",\n")
     (insert "\". c red s background\",\n")
     (insert "/* pixels */\n")
-    (dotimes (i height)
+    (dotimes (_ height)
       (insert ?\" (make-string (or width height) ?.) ?\" ?, ?\n))
-    (delete-backward-char 2)
+    (delete-char -2)
     (insert "\n};\n")
     (buffer-string)))
 
@@ -425,10 +422,10 @@ This is necessary for bizzare Emacs reasons."
     (goto-char (point-min))
     (if (re-search-forward (concat "\"\\([0-9]+\\)\\s-+\\([0-9]+\\)\\s-+"
 				   "\\([0-9]+\\)\\s-+\\([0-9]+\\)\"") nil t)
-	(let* ((width (string-to-int (match-string 1)))
-	       (height (string-to-int (match-string 2)))
-	       (colors (string-to-int (match-string 3)))
-	       (chars-per-color (string-to-int (match-string 4)))
+	(let* ((width (string-to-number (match-string 1)))
+	       (height (string-to-number (match-string 2)))
+	       (colors (string-to-number (match-string 3)))
+	       (chars-per-color (string-to-number (match-string 4)))
 	       (color-char (make-string chars-per-color ?~)))
 	  (replace-match (int-to-string (+ height add-height)) t t nil 2)
 	  (unless
@@ -445,9 +442,9 @@ This is necessary for bizzare Emacs reasons."
 	  (forward-line (1+ colors))
 	  (while (looking-at "/\\*")
 	    (forward-line))
-	  (dotimes (i add-height)
+	  (dotimes (_ add-height)
 	    (insert "\"")
-	    (dotimes (j width)
+	    (dotimes (_ width)
 	      (insert color-char))
 	    (insert "\",\n"))))
     (buffer-string)))
@@ -492,10 +489,6 @@ This is necessary for bizzare Emacs reasons."
 		nil nil nil nil))
 
   (let* ((colors '("black" "white"))
-	 (backgrounds (list chess-images-dark-color
-			    chess-images-light-color))
-	 (piece-colors (list chess-images-black-color
-			     chess-images-white-color))
 	 blank name image-data)
     (dotimes (c 2)
       (dotimes (b 2)

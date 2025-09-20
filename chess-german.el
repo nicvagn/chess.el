@@ -1,14 +1,33 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; chess-german.el --- German translation of the chess.el message catalog  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
+
+;; Author: Mario Lang <mlang@delysid.org>
+;; Keywords: games, i18n
+
+;; This is free software; you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
 ;;
-;; German translation of the chess.el message catalog
+;; This is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+;; for more details.
 ;;
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;;; Code:
 
 (require 'chess-message)
 
 (chess-message-catalog 'german
   '((queen	            . "Dame")
-    (king	            . "König")
-    (bishop	            . "Läufer")
+    (king	            . "KÃ¶nig")
+    (bishop	            . "LÃ¤ufer")
     (knight	            . "Springer")
     (rook	            . "Turm")
     (pawn	            . "Bauer")
@@ -19,14 +38,14 @@
     (stalemate	            . "Patt")
     (en-passant	            . "on possont")
     (piece-moves            . "%s nach %s")
-    (piece-takes            . "%s schlägt %s auf %s")
+    (piece-takes            . "%s schlÃ¤gt %s auf %s")
 
-    (add-to-completed	    . "Kann keine Züge zu abgeschlossenem Spiel hinzufügen")
+    (add-to-completed	    . "Kann keine ZÃ¼ge zu abgeschlossenem Spiel hinzufÃ¼gen")
     (bad-game-read	    . "Beim lesen des Spiels ist ein Fehler an Position %d aufgetreten")
-    (cannot-mount	    . "Es ist nicht Möglich eine Figur auf die andere zu stellen")
-    (cannot-yet-add	    . "Kann noch keine Züge zu Spiel hinzufügen")
+    (cannot-mount	    . "Es ist nicht MÃ¶glich eine Figur auf die andere zu stellen")
+    (cannot-yet-add	    . "Kann noch keine ZÃ¼ge zu Spiel hinzufÃ¼gen")
     (challenge-whom	    . "Wehn willst du herausfordern? ")
-    (chess-delete-autosave  . "Soll die autosave Datei gelöscht werden? ")
+    (chess-delete-autosave  . "Soll die autosave Datei gelÃ¶scht werden? ")
     (chess-disable-autosave . "Disable autosaving for this game? ")
     (chess-read-autosave    . "Es existiert eine Schach autosave Datei, soll sie geladen werden? ")
     (clarify-piece	    . "Clarify piece to move by rank or file")
@@ -39,7 +58,7 @@
     (draw-offer-declined    . "Dein Angebot zum Unentschieden wurde abgelehnt")
     (editing-directly	    . "Now editing position directly, use S when complete...")
     (end-of-puzzles	    . "Es gibt keine weiteren Puzzles in dieser Sammlung")
-    (engine-not-running     . "Die Engine die Du verwendet hast läuft nicht mehr")
+    (engine-not-running     . "Die Engine die Du verwendet hast lÃ¤uft nicht mehr")
     (failed-start	    . "Failed to start chess engine process")
     (game-is-over	    . "Dieses Spiel ist abgeschlossen")
     (ics-connected	    . "Verbindungsaufbau mit Internet Chess Server '%s'...done")
@@ -47,8 +66,8 @@
     (ics-server-prompt	    . "Verbindung zu Schach Server: ")
     (illegal-move	    . "Illegalaler Zug")
     (illegal-notation	    . "Illegale Zug notation: %s")
-    (invalid-fen	    . "Ungültiger FEN string: %s")
-    (invalid-pgn	    . "Ungültiger PGN text empfangen")
+    (invalid-fen	    . "UngÃ¼ltiger FEN string: %s")
+    (invalid-pgn	    . "UngÃ¼ltiger PGN text empfangen")
     (irc-challenge	    . "IRC nick of user to challenge: ")
     (irc-connecting	    . "Verbindungsaufbau mit IRC server '%s:%d'...")
     (irc-logging-in	    . "Connected, now logging in as '%s'...")
@@ -62,7 +81,7 @@
     (mode-resigned	    . "RESIGNED")
     (mode-stalemate	    . "PATT")
     (mode-start		    . "START")
-    (mode-white		    . "Weiß")
+    (mode-white		    . "WeiÃŸ")
     (move-from-blank	    . "Du versuchst eine Figur vom leeren Feld %s zu bewegen")
     (move-not-legal	    . "Dies ist kein legaler Zug")
     (move-passed	    . "Your opponent has passed the move to you")
@@ -90,19 +109,18 @@
     (opp-ready		    . "%s ist nun bereits zu spielen")
     (opp-ready-a	    . "Dein Anonymer Gegner ist nun bereit zu spielen")
     (opp-resigned	    . "Dein Gegner hat aufgegeben")
-    (opp-undo		    . "Dein Gegner will %d Züge zurück nehmen, akzeptierst Du? ")
+    (opp-undo		    . "Dein Gegner will %d ZÃ¼ge zurÃ¼ck nehmen, akzeptierst Du? ")
     (opp-undo-acc	    . "Request to undo %d moves was accepted")
     (opp-undo-dec	    . "Your request to undo %d moves was decline")
     (opp-undo-ret	    . "Your opponent has retracted their request to undo %d moves")
     (opponent-says	    . "Dein Gegner sagt: %s")
-    (pawn-promote-query     . "Promote pawn to queen/rook/knight/bishop? ")
     (pgn-parse-error	    . "Error parsing PGN syntax")
     (pgn-read-error	    . "Error reading move: %s")
     (piece-images-loaded    . "Loading chess piece images...done")
     (piece-images-loading   . "Loading chess piece images...")
     (piece-immobile	    . "That piece cannot move now")
     (piece-unrecognized     . "Unrecognized piece identifier")
-    (queen-would-take	    . "Die Dame würde deinen Springer schlagen!")
+    (queen-would-take	    . "Die Dame wÃ¼rde deinen Springer schlagen!")
     (redrawing-frame	    . "Redrawing chess display with different size...")
     (redrawing-frame-done   . "Redrawing chess display with different size...done")
     (return-to-current	    . "Use '>' to return to the current position")

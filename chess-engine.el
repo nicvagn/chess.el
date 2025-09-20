@@ -1,10 +1,27 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; chess-engine.el --- Obtain movements and other information from an engine  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2014-2020 Free Software Foundation, Inc.
+
+;; This is free software; you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
 ;;
-;; Obtain movements and other information from an engine
+;; This is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+;; for more details.
 ;;
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
+;;; Code:
+
+(require 'chess-algebraic)
+(require 'chess-fen)
+(require 'chess-pgn)
 (require 'chess-module)
 
 (defgroup chess-engine nil
@@ -84,6 +101,8 @@ If conversion fails, this function fired an 'illegal event."
 (defsubst chess-engine-convert-pgn (pgn)
   (or (chess-pgn-to-game pgn)
       (ignore (chess-message 'invalid-pgn))))
+
+(defvar chess-full-name)
 
 (defun chess-engine-default-handler (event &rest args)
   "Default engine response handler."
@@ -291,7 +310,7 @@ If conversion fails, this function fired an 'illegal event."
 				 &rest handler-ctor-args)
   "Create a new chess engine MODULE (a symbol) associated with GAME.
 Optionally supply a new RESPONSE-HANDLER."
-  (let* ((engine (apply 'chess-module-create module game nil
+  (let* ((engine (apply #'chess-module-create module game nil
 			handler-ctor-args)))
     (when engine
       (with-current-buffer engine
@@ -306,7 +325,8 @@ Optionally supply a new RESPONSE-HANDLER."
 	  (when (and proc (processp proc))
 	    (unless (memq (process-status proc) '(run open listen))
 	      (chess-error 'failed-start))
-	    (unless (process-filter proc)
+	    (if (or (not (process-filter proc))
+		    (eq (process-filter proc) 'internal-default-process-filter))
 	      (set-process-filter proc 'chess-engine-filter)))
 	  (setq chess-engine-current-marker (point-marker))
 	  (chess-game-set-data game 'engine (current-buffer)))))))
@@ -399,10 +419,8 @@ event handler can take care of the data."
 ;; Primary event handler
 ;;
 
-(defun chess-engine-sentinal (proc event)
-  (when (buffer-live-p (process-buffer proc))
-    (set-buffer (process-buffer proc))
-    (chess-engine-destroy nil)))
+(defun chess-engine-sentinel (proc _event)
+  (chess-engine-destroy (process-buffer proc)))
 
 (defun chess-engine-filter (proc &optional string)
   "Filter for receiving text for an engine from an outside source."
@@ -410,7 +428,7 @@ event handler can take care of the data."
 		 (process-buffer proc)
 	       (current-buffer)))
 	(inhibit-redisplay t)
-	last-point last-line-no-newline)
+        last-line-no-newline)
     (when (buffer-live-p buf)
       (with-current-buffer buf
 	(if (stringp proc)

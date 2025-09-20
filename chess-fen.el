@@ -1,7 +1,26 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; Convert a chess position to/from FEN notation
-;;
+;;; chess-fen.el --- Convert a chess position to/from FEN notation  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2002-2020  Free Software Foundation, Inc.
+
+;; Author: John Wiegley <johnw@gnu.org>
+;; Maintainer: Mario Lang <mlang@delysid.org>
+;; Keywords: games
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
 ;; FEN notation encodes a chess position using a simple string.  The
 ;; format is:
 ;;
@@ -35,14 +54,18 @@
 ;;
 ;; It may also have the current game sequence appended, but this
 ;; relate to the game, not the position.
-;;
+
+;;; Code:
+
+(require 'chess-pos)
+(eval-when-compile (require 'cl-lib))
 
 (defconst chess-fen-regexp
   "^\\([bnrqkpBNRQKP1-8]*/?\\)+ [bw] \\(-\\|[KQkq]+\\) \\(-\\|[1-8]\\)")
 
 (defun chess-fen-to-pos (fen)
   "Convert a FEN-like notation string to a chess position."
-  (assert (stringp fen))
+  (cl-check-type fen string)
   (let ((i 0) (l (length fen))
 	(rank 0) (file 0) (c ?0)
 	(position (chess-pos-create t))
@@ -95,7 +118,7 @@
 (defun chess-pos-to-fen (position &optional full)
   "Convert a chess POSITION to FEN-like notation.
 If FULL is non-nil, represent trailing spaces as well."
-  (assert (vectorp position))
+  (cl-check-type position chess-pos)
   (let ((blank 0) (str "") output)
     (dotimes (rank 8)
       (dotimes (file 8)
@@ -122,11 +145,11 @@ If FULL is non-nil, represent trailing spaces as well."
       (if (and index
 	       (let ((pawn (if (chess-pos-side-to-move position) ?P ?p)))
 		 (or (and (chess-incr-index index 0 -1)
-			  (eq (chess-pos-piece position (chess-incr-index
-							 index 0 -1)) pawn))
+			  (chess-pos-piece-p position (chess-incr-index
+						       index 0 -1) pawn))
 		     (and (chess-incr-index index 0 1)
-			  (eq (chess-pos-piece position (chess-incr-index
-							 index 0 1)) pawn)))))
+			  (chess-pos-piece-p position (chess-incr-index
+						       index 0 1) pawn)))))
 	  (concat str (chess-index-to-coord
 		       (if (chess-pos-side-to-move position)
 			   (chess-incr-index index -1 0)
